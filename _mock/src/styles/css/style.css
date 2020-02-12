@@ -7,12 +7,24 @@
 html, body {
   font-size: 62.5%;
   height: 100%;
-  overflow: hidden;
 }
+
 @media (max-width: 768px) {
   html, body {
     font-size: 50%;
   }
+}
+
+.jumbotron {
+  background-color: inherit;
+}
+
+#company {
+  font-family: 'Tangerine', cursive;
+}
+
+#subtitle {
+  font-family: 'Indie Flower', cursive;
 }
 
 svg {
