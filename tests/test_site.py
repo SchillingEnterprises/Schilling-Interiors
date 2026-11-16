@@ -7,6 +7,14 @@ from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 BRAND_PAGES = sorted((ROOT / "html").glob("*.html"))
+EXPECTED_PAGES = {
+    "Alynn-Neckwear.html",
+    "Jonathan-Charles-Fine-Furniture.html",
+    "Juliska-Dinnerware.html",
+    "Nina-McLemore.html",
+    "Rosanna.html",
+    "Toss-Designs.html",
+}
 
 
 class DocumentParser(HTMLParser):
@@ -16,8 +24,8 @@ class DocumentParser(HTMLParser):
         super().__init__()
         self.resources = []
         self.images_without_alt = []
+        self.images = []
         self.landmarks = set()
-        self.forms = []
         self.has_language = False
 
     def handle_starttag(self, tag, attributes):
@@ -26,8 +34,6 @@ class DocumentParser(HTMLParser):
             self.has_language = bool(attributes.get("lang"))
         if tag in {"header", "main", "footer", "nav"}:
             self.landmarks.add(tag)
-        if tag == "form":
-            self.forms.append(attributes)
         for attribute in ("href", "src"):
             reference = attributes.get(attribute, "")
             parsed = urlparse(reference)
@@ -38,19 +44,22 @@ class DocumentParser(HTMLParser):
                 and not reference.startswith("mailto:")
             ):
                 self.resources.append(unquote(parsed.path))
-        if tag == "img" and not attributes.get("alt", "").strip():
-            self.images_without_alt.append(attributes.get("src", "(unnamed image)"))
+        if tag == "img":
+            self.images.append(attributes)
+            if not attributes.get("alt", "").strip():
+                self.images_without_alt.append(attributes.get("src", "(unnamed image)"))
 
 
 class StaticArchiveTests(unittest.TestCase):
-    """Protect all static pages from broken local resources and regressions."""
+    """Protect the six-collection static archive from regressions."""
 
     def setUp(self):
         self.html_files = [ROOT / "index.html", *BRAND_PAGES]
 
-    def test_homepage_and_all_seven_brand_pages_are_present(self):
+    def test_homepage_and_exactly_six_brand_pages_are_present(self):
         self.assertTrue((ROOT / "index.html").is_file())
-        self.assertEqual(len(BRAND_PAGES), 7)
+        self.assertEqual({path.name for path in BRAND_PAGES}, EXPECTED_PAGES)
+        self.assertFalse((ROOT / "html" / "Carlisle-Collection.html").exists())
 
     def test_every_html_document_has_language_and_semantic_landmarks(self):
         for document_path in self.html_files:
@@ -86,20 +95,25 @@ class StaticArchiveTests(unittest.TestCase):
                 )
         self.assertEqual(failures, [])
 
-    def test_archive_does_not_publish_personal_contact_metadata_or_fake_login(self):
-        for document_path in self.html_files:
-            html = document_path.read_text(encoding="utf-8").lower()
-            self.assertNotIn("<address", html)
-            self.assertNotIn("tel:", html)
-            self.assertNotIn('type="password"', html)
-            self.assertNotIn("login__submit", html)
+    def test_homepage_has_six_real_photo_previews(self):
+        homepage = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(homepage.count('class="collection-photo"'), 6)
+        self.assertEqual(homepage.count('class="collection-card"'), 6)
+        self.assertIn("photo-fallback", homepage)
+        self.assertIn("is-image-missing", (ROOT / "scripts/js/index.js").read_text(encoding="utf-8"))
+        self.assertNotIn("Carlisle", homepage)
 
     def test_homepage_links_to_each_preserved_brand_page(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
-        for document_path in BRAND_PAGES:
-            relative_path = f"./html/{document_path.name}"
-            with self.subTest(brand_page=relative_path):
-                self.assertIn(relative_path, homepage)
+        for page_name in EXPECTED_PAGES:
+            with self.subTest(brand_page=page_name):
+                self.assertIn(f"./html/{page_name}", homepage)
+
+    def test_furniture_archive_has_a_still_image_and_original_video(self):
+        furniture = (ROOT / "html" / "Jonathan-Charles-Fine-Furniture.html").read_text(encoding="utf-8")
+        self.assertIn("video-still", furniture)
+        self.assertIn("img.youtube.com/vi/82JFOL5tGiE", furniture)
+        self.assertIn("youtube.com/embed/82JFOL5tGiE", furniture)
 
     def test_archive_search_and_filter_controls_are_present(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")

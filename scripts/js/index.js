@@ -1,4 +1,4 @@
-/** Search and filter the preserved collection archive without network calls. */
+/** Search, filter, image fallbacks, and responsive navigation for the archive. */
 document.addEventListener("DOMContentLoaded", () => {
   const searchInput = document.getElementById("collection-search");
   const cards = [...document.querySelectorAll(".collection-card")];
@@ -35,6 +35,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  document.querySelectorAll(".collection-photo").forEach((image) => {
+    image.addEventListener("error", () => {
+      image.closest(".collection-card")?.classList.add("is-image-missing");
+    }, { once: true });
+  });
+
   if (menuButton && siteNavigation) {
     menuButton.addEventListener("click", () => {
       const expanded = menuButton.getAttribute("aria-expanded") === "true";
@@ -46,6 +52,13 @@ document.addEventListener("DOMContentLoaded", () => {
         menuButton.setAttribute("aria-expanded", "false");
         siteNavigation.classList.remove("is-open");
       });
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        menuButton.setAttribute("aria-expanded", "false");
+        siteNavigation.classList.remove("is-open");
+        menuButton.focus();
+      }
     });
   }
 });
