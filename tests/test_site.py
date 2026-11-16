@@ -115,6 +115,15 @@ class StaticArchiveTests(unittest.TestCase):
         self.assertIn("img.youtube.com/vi/82JFOL5tGiE", furniture)
         self.assertIn("youtube.com/embed/82JFOL5tGiE", furniture)
 
+    def test_gallery_fallbacks_are_centralized_and_cover_all_image_pages(self):
+        shared_script = (ROOT / "scripts/js/index.js").read_text(encoding="utf-8")
+        self.assertIn(".collection-photo, .gallery-item img", shared_script)
+        self.assertIn("image-fallback", shared_script)
+        for document_path in BRAND_PAGES:
+            html = document_path.read_text(encoding="utf-8")
+            self.assertNotIn('document.querySelectorAll(".gallery-item img")', html)
+            self.assertIn("../scripts/js/index.js", html)
+
     def test_archive_search_and_filter_controls_are_present(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="collection-search"', homepage)

@@ -54,14 +54,5 @@
     <small>All brand names and third-party imagery remain the property of their respective owners. This archive does not imply current endorsement or affiliation.</small>
   </footer>
   <script src="../scripts/js/index.js" defer></script>
-  <script>
-    document.querySelectorAll(".gallery-item img").forEach((image) => {
-      image.addEventListener("error", () => {
-        image.hidden = true;
-        const fallback = image.nextElementSibling;
-        if (fallback) fallback.hidden = false;
-      }, { once: true });
-    });
-  </script>
 </body>
 </html>
