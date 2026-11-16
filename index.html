@@ -1,154 +1,91 @@
 <!doctype html>
-<html lang="en-us">
-	<head>
-		<title>Schilling Interiors</title>
-			<!-- Meta Tags -->
-				<!-- Required meta tags -->
-	    		<meta charset="utf-8">
-	    		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-				<!-- Webcrawler Meta Tags -->
-					<meta name="title" content="Schilling Interiors">
-					<meta name="description" content="Schilling Interiors, subsidary of Schilling Enterprises">
-					<meta name="author" content="Gavin Schilling">
-					<meta itemprop="image" content="https://schillingenterprises.github.io/Gavin-Schilling-Marketing/img/Schilling-Enterprises.png">
-					<meta property="place:location:latitude"  content="38.268458" />
-					<meta property="place:location:longitude" content="-85.661559" />
-				<!-- /Webcrawler Meta Tags -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f2ec">
+  <meta name="description" content="An archival showcase of fashion, interiors, gifts, and design references from Schilling Interiors.">
+  <title>Schilling Interiors | A Curated Archive</title>
+  <link rel="stylesheet" href="./styles/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="./index.html" aria-label="Schilling Interiors home"><span class="brand-mark" aria-hidden="true">S</span>Schilling Interiors</a>
+    <button class="menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Open navigation">☰</button>
+    <nav class="site-nav" id="site-nav" aria-label="Main navigation">
+      <a href="#collections">The collections</a>
+      <a href="#about">About this archive</a>
+    </nav>
+  </header>
 
-				<!-- Facebook Open Graph Meta Tags -->
-					<meta property="fb:app_id" content="561430954040905">
-					<meta property="og:title" content="Schilling Interiors">
-					<meta property="og:description" content="Schilling Interiors, subsidary of Schilling Enterprises">
-					<meta property="og:url" content="https://schillingenterprises.github.io/Schilling-Interiors/index.html">
-					<meta property="og:image" content="https://schillingenterprises.github.io/Gavin-Schilling-Marketing/img/Gavin_Schilling_Marketing_logo.jpg">
-					<meta property="og:type" content="business.business">
-					<meta property="og:site_name" content="Schilling Interiors">
-					<meta property="fb:admins" content="optimal.leader">
-					<meta property="business:contact_data:street_address" content="140 Westwind Road" />
-					<meta property="business:contact_data:locality" content="Louisville" />
-					<meta property="business:contact_data:region" content="KY">
-					<meta property="business:contact_data:postal_code" content="40207-1520" />
-					<meta property="business:contact_data:country_name" content="US" />
-				<!-- /Facebook Open Graph Meta Tags -->
+  <main id="main">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="kicker">FASHION · INTERIORS · OBJECTS</p>
+        <h1>Considered things.<br><em>Curious living.</em></h1>
+        <p>An editorial archive of design and lifestyle references once gathered under the Schilling Interiors name — from fashion and fine furnishings to tabletop, gifts, and accessories.</p>
+      </div>
+      <span class="hero-meta" aria-hidden="true">A CURATED ARCHIVE / 01</span>
+    </section>
 
-				<!-- Twitter Card Meta Tags -->
-					<meta name="twitter:title" content="Schilling Interiors">
-					<meta name="twitter:description" content="Schilling Interiors, subsidary of Schilling Enterprises">
-					<meta name="twitter:site" content="@schillgc">
-					<meta name="twitter:creator" content="@schillgc">
-					<meta name="twitter:url" content="https://schillingenterprises.github.io/Schilling-Interiors/index.html">
-					<meta name="twitter:image:src" content="https://schillingenterprises.github.io/Gavin-Schilling-Marketing/img/Schilling-Enterprises.png">
-					<meta name="twitter:card" content="summary">
-				<!-- /Twitter Card Meta Tags -->
-				<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
-			<!-- /Meta Tags -->
+    <section class="collection-section" id="collections">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker">THE COLLECTION INDEX</p>
+          <h2>Explore the <em>archive.</em></h2>
+        </div>
+        <p class="section-intro">Browse the preserved brand references. Search by name or narrow the archive by collection type.</p>
+      </div>
 
-			<!-- Bootstrap CSS -->
-				<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/5.0.0-alpha1/css/bootstrap.min.css" integrity="sha384-r4NyP46KrjDleawBgD5tp8Y7UzmLA05oM1iAEQ17CSuDqnUK2+k9luXQOfXJCJ4I" crossorigin="anonymous">
-			<!-- /Bootstrap CSS -->
+      <div class="collection-tools">
+        <label class="sr-only" for="collection-search">Search archived collections</label>
+        <input class="search-box" id="collection-search" type="search" placeholder="Search the collection archive…" autocomplete="off">
+        <div class="filter-list" role="group" aria-label="Filter collection type">
+          <button class="filter-button" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter-button" type="button" data-filter="fashion" aria-pressed="false">Fashion</button>
+          <button class="filter-button" type="button" data-filter="interiors" aria-pressed="false">Interiors</button>
+          <button class="filter-button" type="button" data-filter="objects" aria-pressed="false">Objects &amp; gifts</button>
+        </div>
+      </div>
 
-			<link href="https://fonts.googleapis.com/css?family=Indie+Flower|Tangerine&display=swap" rel="stylesheet">
-			<link rel="stylesheet" href="styles/css/style.css">
-			<link rel="stylesheet" href="styles/css/main.scss">
-	</head>
+      <div class="collection-grid" id="collection-grid">
+        <article class="collection-card" data-category="objects" data-search="alynn neckwear accessories silk">
+          <span class="card-index">01 / ACCESSORIES</span><div class="card-content"><p class="card-category">Objects &amp; accessories</p><h3>Alynn Neckwear</h3><a class="card-link" href="./html/Alynn-Neckwear.html">View archive <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="collection-card" data-category="fashion" data-search="carlisle collection womens fashion">
+          <span class="card-index">02 / FASHION</span><div class="card-content"><p class="card-category">Fashion</p><h3>Carlisle Collection</h3><a class="card-link" href="./html/Carlisle-Collection.html">View archive <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="collection-card" data-category="interiors" data-search="jonathan charles fine furniture interiors">
+          <span class="card-index">03 / FURNITURE</span><div class="card-content"><p class="card-category">Interiors</p><h3>Jonathan Charles Fine Furniture</h3><a class="card-link" href="./html/Jonathan-Charles-Fine-Furniture.html">View archive <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="collection-card" data-category="objects" data-search="juliska dinnerware tabletop home">
+          <span class="card-index">04 / TABLETOP</span><div class="card-content"><p class="card-category">Tabletop &amp; objects</p><h3>Juliska Dinnerware</h3><a class="card-link" href="./html/Juliska-Dinnerware.html">View archive <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="collection-card" data-category="fashion" data-search="nina mclemore fashion">
+          <span class="card-index">05 / FASHION</span><div class="card-content"><p class="card-category">Fashion</p><h3>Nina McLemore</h3><a class="card-link" href="./html/Nina-McLemore.html">View archive <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="collection-card" data-category="objects" data-search="rosanna gifts tabletop home">
+          <span class="card-index">06 / OBJECTS</span><div class="card-content"><p class="card-category">Tabletop &amp; objects</p><h3>Rosanna</h3><a class="card-link" href="./html/Rosanna.html">View archive <span aria-hidden="true">↗</span></a></div>
+        </article>
+        <article class="collection-card" data-category="objects" data-search="toss designs gifts accessories">
+          <span class="card-index">07 / GIFTS</span><div class="card-content"><p class="card-category">Objects &amp; gifts</p><h3>Toss Designs</h3><a class="card-link" href="./html/Toss-Designs.html">View archive <span aria-hidden="true">↗</span></a></div>
+        </article>
+      </div>
+      <p class="empty-state" id="empty-state" role="status" aria-live="polite">No collections match that search. Try another name or category.</p>
 
-	<body>
-		<section class="jumbotron jumbotron-fluid">
-	    <h1 class="display-4 text-center" id="company">Schilling Interiors</h1>
-	    <p class="lead text-center" id="subtitle">Premiere Fashion, Interior Design, Gifts & Accessories By Appointment</p>
-		</section> <!-- Jumbrotron -->
+      <aside class="archive-note" id="about">
+        <strong>About this archive.</strong> This is a preserved project showcase, not a live shop or current representation of the listed brands. Product imagery is hosted by third parties and may change or become unavailable. Verify current availability, affiliations, and usage rights directly with the relevant brand. No customer accounts, checkout, or personal data collection are offered here.
+      </aside>
+    </section>
+  </main>
 
-		<div class="container">
-			<div class="row">
-				<nav class="col-md-2">
-
-					<a href="./html/Juliska-Dinnerware.html">
-						<figure class="card" id="Juliska Dinnerware">
-							<img class="card-img-top resize" data-src="div#Juliska Dinnerware" src="https://www.orangeoffer.com/mimg/merimg/juliska59defd74ed81b.png" id="Juliska Dinnerware" alt="Juliska Dinnerware logo">
-						</figure>
-					</a> <!-- Juliska Dinnerware -->
-
-					<a href="./html/Nina-McLemore.html">
-						<figure class="card" id="Nina McLemore">
-							<img class="card-img-top resize" data-src="div#Nina McLemore" src="https://scontent-atl3-1.xx.fbcdn.net/v/t31.0-8/s960x960/13422209_10154266627248522_6319373462708876383_o.jpg?_nc_cat=100&_nc_ohc=eB00KRFrCpYAX8k2fTV&_nc_ht=scontent-atl3-1.xx&oh=0ac7fe5d586aaf0190964c154a5c7e74&oe=5EC4972E" id="Nina McLemore" alt="Nina McLemore logo">
-						</figure>
-					</a> <!-- Nina McLemore -->
-
-					<a href="./html/Carlisle-Collection.html">
-						<figure class="card" id="Carlisle">
-					  	<img class="card-img-top resize" data-src="div#Carlisle" src="http://photos.prnewswire.com/prn/20110712/DA32834LOGO-b?max=200" id="Carlisle" alt="Carlisle Collection logo">
-						</figure>
-					</a> <!-- W By Worth -->
-
-					<figure class="card" id="Lilly Pulitzer">
-						<img class="card-img-top resize" data-src="div#Lilly Pulitzer" src="https://i.pinimg.com/236x/36/c8/20/36c82003503bf73aef7a4760f29edc84--cute-wallpapers-for-iphone-wallpaper-for-iphone.jpg" id="Lilly Pulitzer" alt="Lilly Pulitzer logo">
-					</figure> <!-- Lilly Pulitzer -->
-				</nav>
-
-				<main class="col-md-8">
-					<div class="cont">
-					  <div class="demo">
-					    <div class="login">
-					      <div class="login__check"></div>
-					      <form class="login__form">
-									<main>
-					        	<figure class="login__row">
-					          	<svg class="login__icon name svg-icon" viewBox="0 0 20 20">
-					            	<path d="M0,20 a10,8 0 0,1 20,0z M10,0 a4,4 0 0,1 0,8 a4,4 0 0,1 0,-8" />
-					          	</svg>
-					          	<input type="text" class="login__input name" placeholder="Username"/>
-					        	</figure>
-					        	<figure class="login__row form-group">
-					          	<svg class="login__icon pass svg-icon" viewBox="0 0 20 20">
-					            	<path d="M0,20 20,20 20,8 0,8z M10,13 10,16z M4,8 a6,8 0 0,1 12,0" />
-					          	</svg>
-					          	<input type="password" class="login__input pass" placeholder="Password"/>
-					        	</figure>
-									</main>
-					        <button type="button submit" class="login__submit">Sign in</button>
-					        <p class="login__signup">Don't have an account? &nbsp;<a>Sign up</a></p>
-					      </form>
-					    </div>
-					  </div>
-					</div>
-				</main>
-
-				<nav class="col-md-2">
-					<a href="./html/Toss-Designs.html">
-						<figure class="card" id="Toss Designs">
-							<img class="card-img-top resize" data-src="div#Toss Designs" src="https://scontent-atl3-1.xx.fbcdn.net/v/t31.0-8/p960x960/14310544_10154497564322930_2538033695949566887_o.jpg?_nc_cat=106&_nc_ohc=QMomfYumInoAX9gFyEZ&_nc_ht=scontent-atl3-1.xx&_nc_tp=6&oh=353a344de2ec87958be7ca0c63b2533e&oe=5ED1B22C" id="Toss Designs" alt="Toss Designs logo">
-						</figure>
-					</a> <!-- Toss Designs -->
-
-					<a href="./html/Alynn-Neckwear.html">
-						<figure class="card" id="Alynn Neckwear">
-							<img class="card-img-top resize" data-src="div#Alynn Neckwear" src="https://res-4.cloudinary.com/crunchbase-production/image/upload/c_lpad,h_120,w_120,f_auto,b_white,q_auto:eco/v1453919370/tpmgiospwh1iagwodac1.png" id="Alynn Neckwear" alt="Alynn Neckwear logo">
-						</figure>
-					</a> <!-- Alynn Neckwear -->
-
-					<a href="./html/Rosanna.html">
-						<figure class="card" id="Rosanna">
-							<img class="card-img-top resize" data-src="div#Rosanna" src="https://f89fcpi4xh3b0mbj2e2nhqhr-wpengine.netdna-ssl.com/wp-content/uploads/sites/12/2019/01/238486-rosanna-logo.jpg" id="Rosanna" alt="Rosanna logo">
-						</figure>
-					</a> <!-- Rosanna -->
-
-					<a href="./html/Jonathan-Charles-Fine-Furniture.html">
-						<figure class="card" id="Jonathon Charles">
-							<img class="card-img-top resize" data-src="div#Jonathon Charles" src="https://www.jonathancharles48hoursale.com/wp-content/uploads/2019/12/JC-Logo.png" id="Jonathan Charles Fine Furniture" alt="Jonathan Charles Fine Furniture logo">
-						</figure>
-					</a> <!-- Jonathon Charles -->
-				</nav>
-			</div> <!-- Row -->
-		</div> <!-- Container -->
-
-		<!-- Optional JavaScript -->
-    <!-- Popper.js first, then Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/5.0.0-alpha1/js/bootstrap.min.js" integrity="sha384-oesi62hOLfzrys4LxRF63OJCXdXDipiYWBnvTl9Y9/TRlw5xlKIEHpNyvvDShgf/" crossorigin="anonymous"></script>
-
-
-	  <script src="scripts/js/index.js"></script>
-
-		<footer><address class="text-center">140 Westwind Rd, Louisville, KY 40207-1520</address></footer>
-	</body>
+  <footer class="site-footer">
+    <a class="brand" href="./index.html"><span class="brand-mark" aria-hidden="true">S</span>Schilling Interiors</a>
+    <p class="footer-note">A preserved design and lifestyle archive.</p>
+    <div class="footer-links"><a href="#collections">Collections</a><a href="#about">About this archive</a><a href="#main">Back to top ↑</a></div>
+    <small>All brand names and third-party imagery remain the property of their respective owners. This archive does not imply current endorsement or affiliation.</small>
+  </footer>
+  <script src="./scripts/js/index.js" defer></script>
+</body>
 </html>
