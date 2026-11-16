@@ -48,7 +48,7 @@ jobs:
           test ! -e dist/.github
           test ! -e dist/tests
           test ! -e dist/README.md
-          if find dist -type f \\( -name '*.py' -o -name '*.sqlite3' -o -name '.env' \\) -print -quit | grep -q .; then
+          if find dist -type f \( -name '*.py' -o -name '*.sqlite3' -o -name '.env' \) -print -quit | grep -q .; then
             echo "Unexpected source, database, or environment file in Pages artifact." >&2
             exit 1
           fi
