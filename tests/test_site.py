@@ -37,7 +37,7 @@ class DocumentParser(HTMLParser):
                 and not reference.startswith(("#", "data:"))
                 and not reference.startswith("mailto:")
             ):
-                self.resources.append(unquote(reference.split("?", 1)[0]))
+                self.resources.append(unquote(parsed.path))
         if tag == "img" and not attributes.get("alt", "").strip():
             self.images_without_alt.append(attributes.get("src", "(unnamed image)"))
 
