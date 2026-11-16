@@ -25,6 +25,7 @@ class DocumentParser(HTMLParser):
         self.resources = []
         self.images_without_alt = []
         self.images = []
+        self.external_blank_links = []
         self.landmarks = set()
         self.has_language = False
 
@@ -48,6 +49,8 @@ class DocumentParser(HTMLParser):
             self.images.append(attributes)
             if not attributes.get("alt", "").strip():
                 self.images_without_alt.append(attributes.get("src", "(unnamed image)"))
+        if tag == "a" and attributes.get("target") == "_blank":
+            self.external_blank_links.append(attributes)
 
 
 class StaticArchiveTests(unittest.TestCase):
@@ -114,6 +117,40 @@ class StaticArchiveTests(unittest.TestCase):
         self.assertIn("video-still", furniture)
         self.assertIn("img.youtube.com/vi/82JFOL5tGiE", furniture)
         self.assertIn("youtube.com/embed/82JFOL5tGiE", furniture)
+
+    def test_collection_images_use_lazy_loading_and_safe_referrer_policy(self):
+        failures = []
+        for document_path in self.html_files:
+            parser = DocumentParser()
+            parser.feed(document_path.read_text(encoding="utf-8"))
+            for image in parser.images:
+                if image.get("loading") != "lazy":
+                    failures.append(f"{document_path.name}: missing lazy loading for {image.get('src')}")
+                if image.get("decoding") != "async":
+                    failures.append(f"{document_path.name}: missing async decoding for {image.get('src')}")
+                if image.get("referrerpolicy") != "no-referrer":
+                    failures.append(f"{document_path.name}: missing no-referrer policy for {image.get('src')}")
+        self.assertEqual(failures, [])
+
+    def test_new_tab_links_use_noopener_and_noreferrer(self):
+        failures = []
+        for document_path in self.html_files:
+            parser = DocumentParser()
+            parser.feed(document_path.read_text(encoding="utf-8"))
+            for link in parser.external_blank_links:
+                rel = set(link.get("rel", "").lower().split())
+                if not {"noopener", "noreferrer"}.issubset(rel):
+                    failures.append(f"{document_path.name}: unsafe target blank link {link.get('href')}")
+        self.assertEqual(failures, [])
+
+    def test_gallery_fallbacks_are_centralized_and_cover_all_image_pages(self):
+        shared_script = (ROOT / "scripts/js/index.js").read_text(encoding="utf-8")
+        self.assertIn(".collection-photo, .gallery-item img", shared_script)
+        self.assertIn("image-fallback", shared_script)
+        for document_path in BRAND_PAGES:
+            html = document_path.read_text(encoding="utf-8")
+            self.assertNotIn('document.querySelectorAll(".gallery-item img")', html)
+            self.assertIn("../scripts/js/index.js", html)
 
     def test_archive_search_and_filter_controls_are_present(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
