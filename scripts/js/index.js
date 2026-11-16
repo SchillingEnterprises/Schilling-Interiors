@@ -1,4 +1,4 @@
-/** Shared archive behavior: collection search, navigation, and resilient imagery. */
+/** Shared archive behavior: search, navigation, and resilient imagery. */
 document.addEventListener("DOMContentLoaded", () => {
   const searchInput = document.getElementById("collection-search");
   const cards = [...document.querySelectorAll(".collection-card")];
@@ -44,6 +44,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function setNavigationOpen(isOpen, { restoreFocus = false } = {}) {
+    menuButton.setAttribute("aria-expanded", String(isOpen));
+    menuButton.setAttribute("aria-label", isOpen ? "Close navigation" : "Open navigation");
+    siteNavigation.classList.toggle("is-open", isOpen);
+    if (restoreFocus) menuButton.focus();
+  }
+
   searchInput?.addEventListener("input", updateCollectionView);
   filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -60,20 +67,14 @@ document.addEventListener("DOMContentLoaded", () => {
   if (menuButton && siteNavigation) {
     menuButton.addEventListener("click", () => {
       const expanded = menuButton.getAttribute("aria-expanded") === "true";
-      menuButton.setAttribute("aria-expanded", String(!expanded));
-      siteNavigation.classList.toggle("is-open", !expanded);
+      setNavigationOpen(!expanded);
     });
     siteNavigation.querySelectorAll("a").forEach((link) => {
-      link.addEventListener("click", () => {
-        menuButton.setAttribute("aria-expanded", "false");
-        siteNavigation.classList.remove("is-open");
-      });
+      link.addEventListener("click", () => setNavigationOpen(false));
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && siteNavigation.classList.contains("is-open")) {
-        menuButton.setAttribute("aria-expanded", "false");
-        siteNavigation.classList.remove("is-open");
-        menuButton.focus();
+      if (event.key === "Escape" && menuButton.getAttribute("aria-expanded") === "true") {
+        setNavigationOpen(false, { restoreFocus: true });
       }
     });
   }
