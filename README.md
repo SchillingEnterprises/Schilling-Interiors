@@ -42,6 +42,7 @@ GitHub Actions runs these checks on pull requests and deploys the static archive
 - Photo previews and collection images are loaded from their original third-party sources; a source may block hotlinking, change its URL, or remove the image. A designed fallback is shown when a homepage preview fails.
 - Images have intentionally not been copied into this repository. Usage rights and commercial permissions must be confirmed with the relevant rights holders.
 - The static site does not collect customer information or offer authentication.
+- GitHub Pages serves a branded `404.html` page for unknown routes; `robots.txt` permits indexing of the public archive.
 - Personal contact metadata was removed from the public HTML.
 - Verify all brand relationships, image permissions, contact details, and product availability before presenting this archive as a current business.
 - No paid services, backend, or runtime package dependencies are required.
