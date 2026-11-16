@@ -1,0 +1,8 @@
+# Local development only. Do not commit real secrets.
+STRIPE_SECRET_KEY=sk_test_replace_me
+STRIPE_WEBHOOK_SECRET=whsec_replace_me
+ADMIN_API_TOKEN=replace-with-a-long-random-secret
+PUBLIC_STORE_URL=http://localhost:8787
+STRIPE_SHIPPING_RATE_ID=
+SHIPPING_ALLOWED_COUNTRIES=US
+STRIPE_AUTOMATIC_TAX=false
