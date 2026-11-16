@@ -61,6 +61,8 @@ class StaticArchiveTests(unittest.TestCase):
 
     def test_homepage_and_exactly_six_brand_pages_are_present(self):
         self.assertTrue((ROOT / "index.html").is_file())
+        self.assertTrue((ROOT / "404.html").is_file())
+        self.assertTrue((ROOT / "robots.txt").is_file())
         self.assertEqual({path.name for path in BRAND_PAGES}, EXPECTED_PAGES)
         self.assertFalse((ROOT / "html" / "Carlisle-Collection.html").exists())
 
