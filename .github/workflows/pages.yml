@@ -27,6 +27,8 @@ jobs:
         run: node --check scripts/js/index.js
       - name: Test navigation interactions
         run: node --test tests/navigation.test.cjs
+      - name: Test archive search, filters, and image fallbacks
+        run: node --test tests/archive-interactions.test.cjs
       - name: Stage only the approved public website
         shell: bash
         run: |
