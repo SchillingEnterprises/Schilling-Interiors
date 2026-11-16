@@ -26,11 +26,15 @@
     </section>
     <section class="brand-gallery">
       <p class="section-kicker">INTERIORS / PRESERVED REFERENCES</p>
+      <figure class="video-still">
+        <img src="https://img.youtube.com/vi/82JFOL5tGiE/hqdefault.jpg" alt="Still image preview from the Jonathan Charles Fine Furniture archival video" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+        <figcaption>Video still preview · Jonathan Charles Fine Furniture archive</figcaption>
+      </figure>
       <div class="video-frame">
-      <iframe src="https://www.youtube.com/embed/82JFOL5tGiE" title="Jonathan Charles Fine Furniture archival video" loading="lazy" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
-    </div>
-    <a class="video-fallback" href="https://www.youtube.com/watch?v=82JFOL5tGiE" target="_blank" rel="noopener noreferrer">Open the original video on YouTube ↗</a>
-      <aside class="archive-note">This is a historical project gallery, not a live catalogue or offer of sale. Images are hosted by third parties and may no longer be available. All brand names and image rights belong to their respective owners; verify current products, availability, affiliations, and permissions directly with each brand.</aside>
+        <iframe src="https://www.youtube.com/embed/82JFOL5tGiE" title="Jonathan Charles Fine Furniture archival video" loading="lazy" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+      </div>
+      <a class="video-fallback" href="https://www.youtube.com/watch?v=82JFOL5tGiE" target="_blank" rel="noopener noreferrer">Open the original video on YouTube ↗</a>
+      <aside class="archive-note">This is a historical project gallery, not a live catalogue or offer of sale. The video still and embedded video are served by YouTube. All brand names and image rights belong to their respective owners; verify current products, availability, affiliations, and permissions directly with each brand.</aside>
       <p><a class="inline-link" href="../index.html#collections">← Return to all collections</a></p>
     </section>
   </main>
@@ -41,14 +45,5 @@
     <small>All brand names and third-party imagery remain the property of their respective owners. This archive does not imply current endorsement or affiliation.</small>
   </footer>
   <script src="../scripts/js/index.js" defer></script>
-  <script>
-    document.querySelectorAll(".gallery-item img").forEach((image) => {
-      image.addEventListener("error", () => {
-        image.hidden = true;
-        const fallback = image.nextElementSibling;
-        if (fallback) fallback.hidden = false;
-      }, { once: true });
-    });
-  </script>
 </body>
 </html>
