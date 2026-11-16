@@ -154,6 +154,16 @@ class StaticArchiveTests(unittest.TestCase):
             self.assertNotIn('document.querySelectorAll(".gallery-item img")', html)
             self.assertIn("../scripts/js/index.js", html)
 
+    def test_pages_workflow_uploads_only_the_approved_public_artifact(self):
+        workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+        self.assertIn("mkdir -p dist", workflow)
+        self.assertIn("for page in index.html 404.html robots.txt", workflow)
+        self.assertIn("for directory in html styles scripts", workflow)
+        self.assertIn("path: dist", workflow)
+        self.assertIn("test ! -e dist/.github", workflow)
+        self.assertIn("test ! -e dist/tests", workflow)
+        self.assertNotIn("path: .", workflow)
+
     def test_archive_search_and_filter_controls_are_present(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="collection-search"', homepage)
