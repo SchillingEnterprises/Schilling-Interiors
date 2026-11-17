@@ -181,3 +181,20 @@ test("an already-failed gallery image is handled during initialization", () => {
   assert.equal(image.hidden, true);
   assert.equal(fallback.hidden, false);
 });
+
+test("the archive preserves exactly the six approved collections and excludes Carlisle", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const collectionCards = html.match(/<article class="collection-card"/g) || [];
+  const approved = [
+    "Alynn Neckwear",
+    "Jonathan Charles Fine Furniture",
+    "Juliska Dinnerware",
+    "Nina McLemore",
+    "Rosanna",
+    "Toss Designs",
+  ];
+
+  assert.equal(collectionCards.length, 6);
+  for (const name of approved) assert.ok(html.includes(name), `Missing approved collection: ${name}`);
+  assert.equal(/Carlisle/i.test(html), false);
+});
