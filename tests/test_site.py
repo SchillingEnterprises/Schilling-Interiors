@@ -100,12 +100,18 @@ class StaticArchiveTests(unittest.TestCase):
                 )
         self.assertEqual(failures, [])
 
-    def test_homepage_has_six_real_photo_previews(self):
+    def test_homepage_has_six_real_photo_previews_and_visible_failure_fallbacks(self):
         homepage = (ROOT / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "scripts/js/index.js").read_text(encoding="utf-8")
+        stylesheet = (ROOT / "styles/css/style.css").read_text(encoding="utf-8")
         self.assertEqual(homepage.count('class="collection-photo"'), 6)
         self.assertEqual(homepage.count('class="collection-card"'), 6)
         self.assertIn("photo-fallback", homepage)
-        self.assertIn("is-image-missing", (ROOT / "scripts/js/index.js").read_text(encoding="utf-8"))
+        self.assertIn("is-image-missing", script)
+        self.assertIn(
+            ".collection-card.is-image-missing .photo-fallback{opacity:1}",
+            stylesheet,
+        )
         self.assertNotIn("Carlisle", homepage)
 
     def test_homepage_links_to_each_preserved_brand_page(self):
