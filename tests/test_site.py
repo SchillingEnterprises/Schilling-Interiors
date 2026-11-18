@@ -160,6 +160,28 @@ class StaticArchiveTests(unittest.TestCase):
             self.assertNotIn('document.querySelectorAll(".gallery-item img")', html)
             self.assertIn("../scripts/js/index.js", html)
 
+    def test_every_collection_archive_contains_real_gallery_images(self):
+        missing = []
+        for document_path in BRAND_PAGES:
+            parser = DocumentParser()
+            parser.feed(document_path.read_text(encoding="utf-8"))
+            sourced_images = [
+                image for image in parser.images
+                if image.get("src", "").strip()
+            ]
+            if not sourced_images:
+                missing.append(document_path.name)
+        self.assertEqual(missing, [], f"Collection archives without sourced images: {missing}")
+
+    def test_carlisle_is_absent_from_every_published_html_document(self):
+        for document_path in self.html_files:
+            with self.subTest(document=document_path.relative_to(ROOT)):
+                self.assertNotIn(
+                    "carlisle",
+                    document_path.read_text(encoding="utf-8").casefold(),
+                )
+        self.assertFalse((ROOT / "html" / "Carlisle-Collection.html").exists())
+
     def test_pages_workflow_uploads_only_the_approved_public_artifact(self):
         workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
         self.assertIn("mkdir -p dist", workflow)
