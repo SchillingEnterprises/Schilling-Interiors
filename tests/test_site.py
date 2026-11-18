@@ -57,7 +57,7 @@ class StaticArchiveTests(unittest.TestCase):
     """Protect the six-collection static archive from regressions."""
 
     def setUp(self):
-        self.html_files = [ROOT / "index.html", *BRAND_PAGES]
+        self.html_files = [ROOT / "index.html", ROOT / "404.html", *BRAND_PAGES]
 
     def test_homepage_and_exactly_six_brand_pages_are_present(self):
         self.assertTrue((ROOT / "index.html").is_file())
