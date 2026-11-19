@@ -46,3 +46,7 @@ GitHub Actions runs these checks on pull requests and deploys the static archive
 - Personal contact metadata was removed from the public HTML.
 - Verify all brand relationships, image permissions, contact details, and product availability before presenting this archive as a current business.
 - No paid services, backend, or runtime package dependencies are required.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for this repository's security, privacy, and responsible-use guidance.
