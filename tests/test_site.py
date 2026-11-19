@@ -136,8 +136,8 @@ class StaticArchiveTests(unittest.TestCase):
                     failures.append(f"{document_path.name}: missing lazy loading for {image.get('src')}")
                 if image.get("decoding") != "async":
                     failures.append(f"{document_path.name}: missing async decoding for {image.get('src')}")
-                if image.get("referrerpolicy") != "no-referrer":
-                    failures.append(f"{document_path.name}: missing no-referrer policy for {image.get('src')}")
+                if image.get("referrerpolicy") != "strict-origin-when-cross-origin":
+                    failures.append(f"{document_path.name}: missing origin-only referrer policy for {image.get('src')}")
         self.assertEqual(failures, [])
 
     def test_new_tab_links_use_noopener_and_noreferrer(self):
