@@ -7,9 +7,10 @@ This is a separate Cloudflare Workers + D1 commerce application. It does not rep
 - Public product catalogue and shopping bag.
 - Admin-only product creation, editing, publishing/unpublishing, and read-only order list.
 - D1-backed product, order, inventory-reservation, and Stripe-event records.
+- Atomic order creation and inventory reservation in one D1 batch transaction, enforced by database triggers; finite stock cannot be oversold by concurrent checkouts.
 - Stripe-hosted Checkout Sessions; card details never pass through this Worker.
-- Signed Stripe webhook handling for paid, expired, and failed checkout sessions.
-- Inventory reservation in D1 batches; reserved stock is released on failed or expired checkouts.
+- Signed, idempotent Stripe webhook handling for paid, expired, and failed checkout sessions. Paid sessions must match the stored order identity, currency, and item subtotal before an order can be marked paid.
+- Reserved stock is released on failed or expired checkouts; successful payment finalizes the reservation.
 - Cloudflare Turnstile gate on checkout and an admin token of at least 32 characters.
 - No card details or shipping address are stored in D1.
 
