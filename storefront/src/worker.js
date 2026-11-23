@@ -75,7 +75,7 @@ async function verifyTurnstile(token, request, env) {
 function hex(buffer) { return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 async function verifyStripeSignature(payload, signature, secret) {
   if (!signature || !secret) return false;
-  const parts = signature.split(",").map((part) => part.split("="));
+  const parts = signature.split(",").map((part) => part.trim().split("=", 2).map((value) => value.trim()));
   const timestamp = parts.find(([key]) => key === "t")?.[1];
   const signatures = parts.filter(([key]) => key === "v1").map(([, value]) => value);
   const seconds = Number(timestamp);
@@ -176,13 +176,18 @@ async function handleStripeWebhook(request, env) {
   if (!event.id || !event.type || !event.data?.object?.id) return text("Invalid event", 400);
   const sessionId = event.data.object.id; const orderId = event.data.object.metadata?.order_id || event.data.object.client_reference_id; const db = env.DB;
   const statements = [db.prepare("INSERT OR IGNORE INTO stripe_events (id, event_type) VALUES (?, ?)").bind(event.id, event.type)];
+  if (!orderId) {
+    statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
+    await db.batch(statements);
+    return text("ok", 200);
+  }
   if ((event.type === "checkout.session.completed" && event.data.object.payment_status === "paid") || event.type === "checkout.session.async_payment_succeeded") {
     statements.push(db.prepare("UPDATE orders SET status = 'paid', amount_total_cents = ?, updated_at = datetime('now') WHERE id = ? AND (stripe_session_id IS NULL OR stripe_session_id = ?) AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(Number(event.data.object.amount_total || 0), orderId, sessionId, event.id));
     statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = ? AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, event.id));
   } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
     const status = event.type === "checkout.session.expired" ? "expired" : "failed";
     statements.push(db.prepare("UPDATE products SET inventory_quantity = inventory_quantity + COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id = ? AND product_id = products.id AND inventory_reserved = 1), 0), updated_at = datetime('now') WHERE inventory_quantity IS NOT NULL AND id IN (SELECT product_id FROM order_items WHERE order_id = ? AND inventory_reserved = 1) AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, orderId, event.id));
-    statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = (SELECT id FROM orders WHERE stripe_session_id = ?) AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(sessionId, event.id));
+    statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = ? AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, event.id));
     statements.push(db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND (stripe_session_id IS NULL OR stripe_session_id = ?) AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(status, orderId, sessionId, event.id));
   }
   statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
@@ -248,7 +253,8 @@ export default {
       const message = error instanceof Error ? error.message : "Unexpected error.";
       const validation = ["Request body is too large.", "Request body must be valid JSON."].includes(message)
         || message.startsWith("Product ") || message.startsWith("Use a unique") || message.startsWith("Price ") || message.startsWith("Inventory ") || message.startsWith("Choose ") || message.startsWith("A product does not have enough stock.");
-      return validation ? json({ error: message }, 400) : json({ error: "The store could not complete that request. Please try again." }, 500);
+      const conflict = message.startsWith("A product does not have enough stock.");
+      return json({ error: message }, conflict ? 409 : validation ? 400 : 500);
     }
   }
 };
