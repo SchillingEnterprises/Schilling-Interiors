@@ -1,7 +1,7 @@
-# Local development only. Use Stripe test-mode values. Never commit real secrets.
+# Copy to .dev.vars for local Worker development. Never commit real secrets.
 STRIPE_SECRET_KEY=sk_test_replace_me
 STRIPE_WEBHOOK_SECRET=whsec_replace_me
 ADMIN_API_TOKEN=replace-with-at-least-32-random-characters
-PUBLIC_STORE_URL=http://localhost:8787
-STRIPE_SHIPPING_RATE_ID=
-STRIPE_AUTOMATIC_TAX=false
+TURNSTILE_SECRET_KEY=replace-with-turnstile-secret
+STRIPE_SHIPPING_RATE_ID=shr_replace_with_configured_shipping_rate
+# Checkout remains disabled until the business has confirmed policies, taxes, and launch settings.
