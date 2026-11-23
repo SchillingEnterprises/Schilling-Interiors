@@ -50,10 +50,10 @@ function editProduct(product) {
 function clearForm() { form.reset(); document.getElementById("product-id").value = ""; document.getElementById("product-form-heading").textContent = "Add a product"; document.getElementById("shipping-required").checked = true; }
 connectButton.addEventListener("click", async () => {
   token = tokenInput.value.trim();
-  try { await load(); sessionStorage.setItem("schilling-admin-token", token); }
+  try { await load(); }
   catch (error) { token = ""; statusNode.textContent = error.message; }
 });
-tokenInput.value = sessionStorage.getItem("schilling-admin-token") || "";
+tokenInput.value = "";
 form.addEventListener("submit", async (event) => {
   event.preventDefault(); if (!token) { statusNode.textContent = "Connect with the admin token first."; return; }
   const id = document.getElementById("product-id").value;
@@ -62,4 +62,4 @@ form.addEventListener("submit", async (event) => {
   catch (error) { statusNode.textContent = error.message; }
 });
 document.getElementById("reset-form").addEventListener("click", clearForm);
-if (tokenInput.value) connectButton.click();
+

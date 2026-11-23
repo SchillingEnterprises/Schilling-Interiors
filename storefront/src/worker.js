@@ -117,8 +117,8 @@ async function handleCheckout(request, env) {
   });
   if (subtotal > 10000000) return json({ error: "Your cart total exceeds the supported checkout limit." }, 400);
   if (hasShipping && !env.STRIPE_SHIPPING_RATE_ID) return json({ error: "Shipping has not been configured for this store yet." }, 503);
-  const orderId = crypto.randomUUID(); const requested = JSON.stringify(items);
-  const insertOrder = env.DB.prepare("INSERT INTO orders (id, status, currency, subtotal_cents, items_json) SELECT ?, 'pending', 'usd', ?, ? WHERE NOT EXISTS (SELECT 1 FROM json_each(?) AS item LEFT JOIN products AS p ON p.id = json_extract(item.value, '$.id') WHERE p.id IS NULL OR p.active <> 1 OR (p.inventory_quantity IS NOT NULL AND p.inventory_quantity < json_extract(item.value, '$.quantity'))) AND (SELECT COUNT(*) FROM products WHERE id IN (SELECT json_extract(value, '$.id') FROM json_each(?))) = ?").bind(orderId, subtotal, JSON.stringify(snapshot), requested, requested, items.length);
+  const orderId = crypto.randomUUID(); const requested = JSON.stringify(items.map((item) => ({ ...item, priceCents: byId.get(item.id).priceCents })));
+  const insertOrder = env.DB.prepare("INSERT INTO orders (id, status, currency, subtotal_cents, items_json) SELECT ?, 'pending', 'usd', ?, ? WHERE NOT EXISTS (SELECT 1 FROM json_each(?) AS item LEFT JOIN products AS p ON p.id = json_extract(item.value, '$.id') WHERE p.id IS NULL OR p.active <> 1 OR p.price_cents <> json_extract(item.value, '$.priceCents') OR (p.inventory_quantity IS NOT NULL AND p.inventory_quantity < json_extract(item.value, '$.quantity'))) AND (SELECT COUNT(*) FROM products WHERE id IN (SELECT json_extract(value, '$.id') FROM json_each(?))) = ?").bind(orderId, subtotal, JSON.stringify(snapshot), requested, requested, items.length);
   const statements = [insertOrder];
   for (const item of items) {
     statements.push(env.DB.prepare("UPDATE products SET inventory_quantity = CASE WHEN inventory_quantity IS NULL THEN NULL ELSE inventory_quantity - ? END, updated_at = datetime('now') WHERE id = ? AND active = 1 AND (inventory_quantity IS NULL OR inventory_quantity >= ?) AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'pending')").bind(item.quantity, item.id, item.quantity, orderId));
@@ -158,7 +158,8 @@ async function handleCheckout(request, env) {
     return json({ error: "The payment provider could not start checkout. Your stock reservation has been released." }, 502);
   }
   try {
-    await env.DB.prepare("UPDATE orders SET stripe_session_id = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'").bind(session.id, orderId).run();
+    const linked = await env.DB.prepare("UPDATE orders SET stripe_session_id = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'").bind(session.id, orderId).run();
+    if (linked.meta?.changes !== 1) throw new Error("Order session link was not saved.");
   } catch {
     await fetch("https://api.stripe.com/v1/checkout/sessions/" + encodeURIComponent(session.id), { method: "POST", headers: { authorization: "Bearer " + env.STRIPE_SECRET_KEY, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ expires_at: String(Math.floor(Date.now() / 1000)) }) }).catch(() => {});
     await releaseOrder(env.DB, orderId, "failed");
@@ -173,16 +174,16 @@ async function handleStripeWebhook(request, env) {
   let event;
   try { event = JSON.parse(payload); } catch { return text("Invalid event", 400); }
   if (!event.id || !event.type || !event.data?.object?.id) return text("Invalid event", 400);
-  const sessionId = event.data.object.id; const db = env.DB;
+  const sessionId = event.data.object.id; const orderId = event.data.object.metadata?.order_id || event.data.object.client_reference_id; const db = env.DB;
   const statements = [db.prepare("INSERT OR IGNORE INTO stripe_events (id, event_type) VALUES (?, ?)").bind(event.id, event.type)];
   if ((event.type === "checkout.session.completed" && event.data.object.payment_status === "paid") || event.type === "checkout.session.async_payment_succeeded") {
-    statements.push(db.prepare("UPDATE orders SET status = 'paid', amount_total_cents = ?, updated_at = datetime('now') WHERE stripe_session_id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(Number(event.data.object.amount_total || 0), sessionId, event.id));
-    statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = (SELECT id FROM orders WHERE stripe_session_id = ?) AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(sessionId, event.id));
+    statements.push(db.prepare("UPDATE orders SET status = 'paid', amount_total_cents = ?, updated_at = datetime('now') WHERE id = ? AND (stripe_session_id IS NULL OR stripe_session_id = ?) AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(Number(event.data.object.amount_total || 0), orderId, sessionId, event.id));
+    statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = ? AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, event.id));
   } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
     const status = event.type === "checkout.session.expired" ? "expired" : "failed";
-    statements.push(db.prepare("UPDATE products SET inventory_quantity = inventory_quantity + COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id = (SELECT id FROM orders WHERE stripe_session_id = ?) AND product_id = products.id AND inventory_reserved = 1), 0), updated_at = datetime('now') WHERE inventory_quantity IS NOT NULL AND id IN (SELECT product_id FROM order_items WHERE order_id = (SELECT id FROM orders WHERE stripe_session_id = ?) AND inventory_reserved = 1) AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(sessionId, sessionId, event.id));
+    statements.push(db.prepare("UPDATE products SET inventory_quantity = inventory_quantity + COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id = ? AND product_id = products.id AND inventory_reserved = 1), 0), updated_at = datetime('now') WHERE inventory_quantity IS NOT NULL AND id IN (SELECT product_id FROM order_items WHERE order_id = ? AND inventory_reserved = 1) AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, orderId, event.id));
     statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = (SELECT id FROM orders WHERE stripe_session_id = ?) AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(sessionId, event.id));
-    statements.push(db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE stripe_session_id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(status, sessionId, event.id));
+    statements.push(db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND (stripe_session_id IS NULL OR stripe_session_id = ?) AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(status, orderId, sessionId, event.id));
   }
   statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
   await db.batch(statements); return text("ok", 200);
