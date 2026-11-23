@@ -50,3 +50,8 @@ GitHub Actions runs these checks on pull requests and deploys the static archive
 ## Security
 
 See [SECURITY.md](SECURITY.md) for this repository's security, privacy, and responsible-use guidance.
+
+
+## Storefront implementation
+
+A separate Cloudflare Workers + D1 commerce application is being developed under [storefront/](./storefront/). It is not part of the public GitHub Pages archive. The storefront is intentionally not deployed and checkout remains disabled until production infrastructure, catalog rights, customer policies, tax/shipping configuration, and end-to-end payment tests are approved. See the storefront README for implementation and release gates.
