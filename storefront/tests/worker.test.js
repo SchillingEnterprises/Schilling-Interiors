@@ -62,3 +62,46 @@ test("Stripe session linking remains valid when a paid webhook wins the race", a
   status = "expired";
   assert.equal(await linkStripeSession(db, "cs_test_abc123", "order-1"), false);
 });
+
+
+test("public config reports checkout disabled when production gates are absent", async () => {
+  const response = await (await import("../src/worker.js")).default.fetch(
+    new Request("https://shop.example.com/api/config"),
+    {}
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).checkoutEnabled, false);
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});
+
+test("checkout fails closed before reading a request or contacting payment services", async () => {
+  const response = await (await import("../src/worker.js")).default.fetch(
+    new Request("https://shop.example.com/api/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items: [] })
+    }),
+    {}
+  );
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /not activated/i);
+});
+
+test("admin routes reject missing credentials before database access", async () => {
+  const response = await (await import("../src/worker.js")).default.fetch(
+    new Request("https://shop.example.com/api/admin/orders"),
+    {}
+  );
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "Unauthorized.");
+});
+
+test("Stripe webhook rejects unsigned requests before database access", async () => {
+  const response = await (await import("../src/worker.js")).default.fetch(
+    new Request("https://shop.example.com/api/stripe/webhook", { method: "POST", body: "{}" }),
+    {}
+  );
+  assert.equal(response.status, 400);
+  assert.equal(await response.text(), "Invalid signature");
+});
