@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, linkStripeSession, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
@@ -104,4 +104,76 @@ test("Stripe webhook rejects unsigned requests before database access", async ()
   );
   assert.equal(response.status, 400);
   assert.equal(await response.text(), "Invalid signature");
+});
+
+
+test("inventory reservation stops when a concurrent checkout takes the last unit", async () => {
+  const calls = [];
+  const batches = [];
+  const db = {
+    prepare(sql) {
+      return {
+        sql,
+        bind(...args) {
+          return {
+            sql,
+            args,
+            run: async () => {
+              calls.push(sql);
+              if (sql.startsWith("UPDATE products SET inventory_quantity = CASE")) return { meta: { changes: 0 } };
+              return { meta: { changes: 1 } };
+            }
+          };
+        }
+      };
+    },
+    batch: async (statements) => {
+      batches.push(statements.map((statement) => statement.sql));
+      return [];
+    }
+  };
+  const reserved = await reserveOrderInventory(db, "order-race", [{ id: "product-1", quantity: 1 }], new Map([["product-1", { priceCents: 2500 }]]));
+  assert.equal(reserved, false);
+  assert.equal(calls.some((sql) => sql.startsWith("INSERT INTO order_items")), false);
+  assert.equal(batches.length, 1);
+  assert.match(batches[0][2], /UPDATE orders SET status = \?, updated_at/);
+});
+
+test("inventory reservation releases earlier items when a later item loses a stock race", async () => {
+  const calls = [];
+  const batches = [];
+  let stockUpdates = 0;
+  const db = {
+    prepare(sql) {
+      return {
+        sql,
+        bind(...args) {
+          return {
+            sql,
+            args,
+            run: async () => {
+              calls.push(sql);
+              if (sql.startsWith("UPDATE products SET inventory_quantity = CASE")) {
+                stockUpdates += 1;
+                return { meta: { changes: stockUpdates === 1 ? 1 : 0 } };
+              }
+              return { meta: { changes: 1 } };
+            }
+          };
+        }
+      };
+    },
+    batch: async (statements) => {
+      batches.push(statements.map((statement) => statement.sql));
+      return [];
+    }
+  };
+  const items = [{ id: "product-1", quantity: 1 }, { id: "product-2", quantity: 1 }];
+  const products = new Map(items.map((item) => [item.id, { priceCents: 2500 }]));
+  const reserved = await reserveOrderInventory(db, "order-partial", items, products);
+  assert.equal(reserved, false);
+  assert.equal(calls.filter((sql) => sql.startsWith("INSERT INTO order_items")).length, 1);
+  assert.equal(batches.length, 1);
+  assert.match(batches[0][0], /UPDATE products SET inventory_quantity = inventory_quantity \+/);
+  assert.match(batches[0][1], /UPDATE order_items SET inventory_reserved = 0/);
 });
