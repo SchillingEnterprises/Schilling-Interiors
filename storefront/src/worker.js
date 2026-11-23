@@ -91,29 +91,17 @@ async function releaseOrder(db, orderId, status) {
     db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'").bind(status, orderId)
   ]);
 }
-async function reserveOrderInventory(db, orderId, items, productsById) {
+async function reserveOrderInventory(db, orderStatement, orderId, items, productsById) {
+  const statements = [orderStatement];
   for (const item of items) {
     const product = productsById.get(item.id);
-    const updated = await db.prepare("UPDATE products SET inventory_quantity = CASE WHEN inventory_quantity IS NULL THEN NULL ELSE inventory_quantity - ? END, updated_at = datetime('now') WHERE id = ? AND active = 1 AND (inventory_quantity IS NULL OR inventory_quantity >= ?) AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'pending')").bind(item.quantity, item.id, item.quantity, orderId).run();
-    if (updated.meta?.changes !== 1) {
-      await releaseOrder(db, orderId, "failed");
-      return false;
-    }
-    let inserted;
-    try {
-      inserted = await db.prepare("INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents, inventory_reserved) SELECT ?, ?, ?, ?, 1 WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'pending')").bind(orderId, item.id, item.quantity, product.priceCents, orderId).run();
-    } catch (error) {
-      await db.prepare("UPDATE products SET inventory_quantity = inventory_quantity + ?, updated_at = datetime('now') WHERE id = ? AND inventory_quantity IS NOT NULL").bind(item.quantity, item.id).run();
-      await releaseOrder(db, orderId, "failed");
-      throw error;
-    }
-    if (inserted.meta?.changes !== 1) {
-      await db.prepare("UPDATE products SET inventory_quantity = inventory_quantity + ?, updated_at = datetime('now') WHERE id = ? AND inventory_quantity IS NOT NULL").bind(item.quantity, item.id).run();
-      await releaseOrder(db, orderId, "failed");
-      return false;
-    }
+    statements.push(db.prepare("INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents, inventory_reserved) SELECT ?, ?, ?, ?, 1 WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'pending')").bind(orderId, item.id, item.quantity, product.priceCents, orderId));
   }
-  return true;
+  // D1 batch executes these statements in one transaction. The inventory trigger
+  // reserves each item or aborts the entire order when any item is unavailable.
+  const results = await db.batch(statements);
+  return results.length === statements.length
+    && results.every((result) => result.meta?.changes === 1);
 }
 async function handleCheckout(request, env) {
   if (!checkoutConfigured(env)) return json({ error: "Online checkout is not activated yet. The store is being configured." }, 503);
@@ -143,9 +131,16 @@ async function handleCheckout(request, env) {
   if (hasShipping && !env.STRIPE_SHIPPING_RATE_ID) return json({ error: "Shipping has not been configured for this store yet." }, 503);
   const orderId = crypto.randomUUID(); const requested = JSON.stringify(items.map((item) => ({ ...item, priceCents: byId.get(item.id).priceCents })));
   const insertOrder = env.DB.prepare("INSERT INTO orders (id, status, currency, subtotal_cents, items_json) SELECT ?, 'pending', 'usd', ?, ? WHERE NOT EXISTS (SELECT 1 FROM json_each(?) AS item LEFT JOIN products AS p ON p.id = json_extract(item.value, '$.id') WHERE p.id IS NULL OR p.active <> 1 OR p.price_cents <> json_extract(item.value, '$.priceCents') OR (p.inventory_quantity IS NOT NULL AND p.inventory_quantity < json_extract(item.value, '$.quantity'))) AND (SELECT COUNT(*) FROM products WHERE id IN (SELECT json_extract(value, '$.id') FROM json_each(?))) = ?").bind(orderId, subtotal, JSON.stringify(snapshot), requested, requested, items.length);
-  const created = await insertOrder.run();
-  if (created.meta?.changes !== 1) return json({ error: "Stock changed while you were checking out. Refresh your cart and try again." }, 409);
-  if (!await reserveOrderInventory(env.DB, orderId, items, byId)) return json({ error: "Stock changed while you were checking out. Refresh your cart and try again." }, 409);
+  try {
+    if (!await reserveOrderInventory(env.DB, insertOrder, orderId, items, byId)) {
+      return json({ error: "Stock changed while you were checking out. Refresh your cart and try again." }, 409);
+    }
+  } catch (error) {
+    if (/inventory|product unavailable/i.test(String(error))) {
+      return json({ error: "Stock changed while you were checking out. Refresh your cart and try again." }, 409);
+    }
+    throw error;
+  }
   const storeUrl = new URL(env.PUBLIC_STORE_URL); const form = new URLSearchParams();
   form.set("mode", "payment"); form.set("client_reference_id", orderId);
   form.set("success_url", new URL("/success.html?session_id={CHECKOUT_SESSION_ID}", storeUrl).toString());
