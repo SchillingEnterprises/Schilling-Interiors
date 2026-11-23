@@ -187,6 +187,23 @@ async function linkStripeSession(db, sessionId, orderId) {
   return linked.meta?.changes === 1;
 }
 
+function validPaidCheckoutSession(session, order) {
+  return Boolean(
+    session
+    && session.id
+    && /^cs_(test|live)_[A-Za-z0-9]+$/.test(session.id)
+    && session.mode === "payment"
+    && session.payment_status === "paid"
+    && String(session.currency || "").toLowerCase() === order.currency
+    && Number.isInteger(session.amount_subtotal)
+    && session.amount_subtotal === order.subtotal_cents
+    && Number.isInteger(session.amount_total)
+    && session.amount_total >= session.amount_subtotal
+    && session.metadata?.order_id === order.id
+    && session.client_reference_id === order.id
+  );
+}
+
 async function handleStripeWebhook(request, env) {
   const payload = await request.text();
   if (encoder.encode(payload).byteLength > 256000) return text("Payload too large", 413);
@@ -194,16 +211,32 @@ async function handleStripeWebhook(request, env) {
   let event;
   try { event = JSON.parse(payload); } catch { return text("Invalid event", 400); }
   if (!event.id || !event.type || !event.data?.object?.id) return text("Invalid event", 400);
-  const sessionId = event.data.object.id; const orderId = event.data.object.metadata?.order_id || event.data.object.client_reference_id; const db = env.DB;
+  const session = event.data.object;
+  const sessionId = session.id;
+  const metadataOrderId = session.metadata?.order_id;
+  const clientOrderId = session.client_reference_id;
+  const orderId = metadataOrderId || clientOrderId;
+  const db = env.DB;
   const statements = [db.prepare("INSERT OR IGNORE INTO stripe_events (id, event_type) VALUES (?, ?)").bind(event.id, event.type)];
-  if (!orderId) {
+  if (!orderId || (metadataOrderId && clientOrderId && metadataOrderId !== clientOrderId)) {
     statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
     await db.batch(statements);
     return text("ok", 200);
   }
-  if ((event.type === "checkout.session.completed" && event.data.object.payment_status === "paid") || event.type === "checkout.session.async_payment_succeeded") {
-    statements.push(db.prepare("UPDATE orders SET status = 'paid', amount_total_cents = ?, updated_at = datetime('now') WHERE id = ? AND (stripe_session_id IS NULL OR stripe_session_id = ?) AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(Number(event.data.object.amount_total || 0), orderId, sessionId, event.id));
-    statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = ? AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, event.id));
+  const order = await db.prepare("SELECT id, stripe_session_id, subtotal_cents, currency, status FROM orders WHERE id = ?").bind(orderId).first();
+  if (!order || (order.stripe_session_id && order.stripe_session_id !== sessionId)) {
+    statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
+    await db.batch(statements);
+    return text("ok", 200);
+  }
+  if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+    if (!validPaidCheckoutSession(session, order)) {
+      statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
+      await db.batch(statements);
+      return text("ok", 200);
+    }
+    statements.push(db.prepare("UPDATE orders SET status = 'paid', amount_total_cents = ?, updated_at = datetime('now') WHERE id = ? AND currency = ? AND subtotal_cents = ? AND (stripe_session_id IS NULL OR stripe_session_id = ?) AND status = 'pending' AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(session.amount_total, orderId, order.currency, order.subtotal_cents, sessionId, event.id));
+    statements.push(db.prepare("UPDATE order_items SET inventory_reserved = 0 WHERE order_id = ? AND inventory_reserved = 1 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'paid') AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, orderId, event.id));
   } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
     const status = event.type === "checkout.session.expired" ? "expired" : "failed";
     statements.push(db.prepare("UPDATE products SET inventory_quantity = inventory_quantity + COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id = ? AND product_id = products.id AND inventory_reserved = 1), 0), updated_at = datetime('now') WHERE inventory_quantity IS NOT NULL AND id IN (SELECT product_id FROM order_items WHERE order_id = ? AND inventory_reserved = 1) AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND processed_at IS NULL)").bind(orderId, orderId, event.id));
@@ -278,4 +311,4 @@ export default {
     }
   }
 };
-export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validateProduct, verifyStripeSignature };
+export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateProduct, verifyStripeSignature };
