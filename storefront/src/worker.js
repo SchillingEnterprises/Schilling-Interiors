@@ -158,8 +158,8 @@ async function handleCheckout(request, env) {
     return json({ error: "The payment provider could not start checkout. Your stock reservation has been released." }, 502);
   }
   try {
-    const linked = await env.DB.prepare("UPDATE orders SET stripe_session_id = ?, updated_at = datetime('now') WHERE id = ? AND stripe_session_id IS NULL").bind(session.id, orderId).run();
-    if (linked.meta?.changes !== 1) throw new Error("Order session link was not saved.");
+    const linked = await linkStripeSession(env.DB, session.id, orderId);
+    if (!linked) throw new Error("Order session link was not saved.");
   } catch {
     await fetch("https://api.stripe.com/v1/checkout/sessions/" + encodeURIComponent(session.id), { method: "POST", headers: { authorization: "Bearer " + env.STRIPE_SECRET_KEY, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ expires_at: String(Math.floor(Date.now() / 1000)) }) }).catch(() => {});
     await releaseOrder(env.DB, orderId, "failed");
@@ -167,6 +167,11 @@ async function handleCheckout(request, env) {
   }
   return json({ url: session.url });
 }
+async function linkStripeSession(db, sessionId, orderId) {
+  const linked = await db.prepare("UPDATE orders SET stripe_session_id = ?, updated_at = datetime('now') WHERE id = ? AND stripe_session_id IS NULL AND status IN ('pending', 'paid')").bind(sessionId, orderId).run();
+  return linked.meta?.changes === 1;
+}
+
 async function handleStripeWebhook(request, env) {
   const payload = await request.text();
   if (encoder.encode(payload).byteLength > 256000) return text("Payload too large", 413);
@@ -258,4 +263,4 @@ export default {
     }
   }
 };
-export { checkoutConfigured, constantTimeEqual, validateProduct, verifyStripeSignature };
+export { checkoutConfigured, constantTimeEqual, linkStripeSession, validateProduct, verifyStripeSignature };

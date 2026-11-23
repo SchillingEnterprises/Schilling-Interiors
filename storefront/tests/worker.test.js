@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { checkoutConfigured, constantTimeEqual, linkStripeSession, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
@@ -39,4 +39,26 @@ test("Stripe signature accepts only valid recent signatures", async () => {
   assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=invalid,v1=" + signature, secret), true);
   assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=bad", secret), false);
   assert.equal(await verifyStripeSignature(payload, "t=1,v1=" + signature, secret), false);
+});
+
+
+test("Stripe session linking remains valid when a paid webhook wins the race", async () => {
+  let sql = "";
+  let status = "paid";
+  const db = {
+    prepare(statement) {
+      sql = statement;
+      return {
+        bind(sessionId, orderId) {
+          assert.equal(sessionId, "cs_test_abc123");
+          assert.equal(orderId, "order-1");
+          return { run: async () => ({ meta: { changes: status === "pending" || status === "paid" ? 1 : 0 } }) };
+        }
+      };
+    }
+  };
+  assert.equal(await linkStripeSession(db, "cs_test_abc123", "order-1"), true);
+  assert.match(sql, /status IN \('pending', 'paid'\)/);
+  status = "expired";
+  assert.equal(await linkStripeSession(db, "cs_test_abc123", "order-1"), false);
 });
