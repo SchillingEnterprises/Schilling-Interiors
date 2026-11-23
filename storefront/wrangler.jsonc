@@ -1,0 +1,31 @@
+{
+  "$schema": "https://developers.cloudflare.com/workers/wrangler/config-schema.json",
+  "name": "schilling-interiors-store",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-23",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "schilling-interiors-store",
+      "database_id": "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "PUBLIC_STORE_URL": "https://REPLACE_WITH_YOUR_WORKER.workers.dev",
+    "SHIPPING_ALLOWED_COUNTRIES": "US",
+    "STORE_CHECKOUT_ENABLED": "false",
+    "STORE_POLICIES_CONFIRMED": "false",
+    "TAX_CONFIGURATION_CONFIRMED": "false",
+    "STRIPE_AUTOMATIC_TAX": "false",
+    "TURNSTILE_SITE_KEY": ""
+  },
+  "observability": {
+    "enabled": true
+  }
+}
