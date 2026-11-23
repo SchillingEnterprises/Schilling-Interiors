@@ -107,73 +107,52 @@ test("Stripe webhook rejects unsigned requests before database access", async ()
 });
 
 
-test("inventory reservation stops when a concurrent checkout takes the last unit", async () => {
-  const calls = [];
+test("inventory reservation batches order creation and every item in one transaction", async () => {
   const batches = [];
   const db = {
     prepare(sql) {
       return {
         sql,
-        bind(...args) {
-          return {
-            sql,
-            args,
-            run: async () => {
-              calls.push(sql);
-              if (sql.startsWith("UPDATE products SET inventory_quantity = CASE")) return { meta: { changes: 0 } };
-              return { meta: { changes: 1 } };
-            }
-          };
-        }
+        bind(...args) { return { sql, args }; }
       };
     },
     batch: async (statements) => {
-      batches.push(statements.map((statement) => statement.sql));
-      return [];
+      batches.push(statements);
+      return statements.map(() => ({ meta: { changes: 1 } }));
     }
   };
-  const reserved = await reserveOrderInventory(db, "order-race", [{ id: "product-1", quantity: 1 }], new Map([["product-1", { priceCents: 2500 }]]));
-  assert.equal(reserved, false);
-  assert.equal(calls.some((sql) => sql.startsWith("INSERT INTO order_items")), false);
+  const order = { sql: "INSERT INTO orders", bind: () => ({ sql: "INSERT INTO orders" }) };
+  const items = [{ id: "product-1", quantity: 1 }, { id: "product-2", quantity: 2 }];
+  const products = new Map(items.map((item) => [item.id, { priceCents: 2500 }]));
+  assert.equal(await reserveOrderInventory(db, order, "order-atomic", items, products), true);
   assert.equal(batches.length, 1);
-  assert.match(batches[0][2], /UPDATE orders SET status = \?, updated_at/);
+  assert.equal(batches[0].length, 3);
+  assert.match(batches[0][1].sql, /INSERT INTO order_items/);
+  assert.match(batches[0][2].sql, /INSERT INTO order_items/);
+  assert.equal(batches[0][1].args[0], "order-atomic");
 });
 
-test("inventory reservation releases earlier items when a later item loses a stock race", async () => {
-  const calls = [];
-  const batches = [];
-  let stockUpdates = 0;
+test("inventory reservation reports a failed order or item statement", async () => {
   const db = {
-    prepare(sql) {
-      return {
-        sql,
-        bind(...args) {
-          return {
-            sql,
-            args,
-            run: async () => {
-              calls.push(sql);
-              if (sql.startsWith("UPDATE products SET inventory_quantity = CASE")) {
-                stockUpdates += 1;
-                return { meta: { changes: stockUpdates === 1 ? 1 : 0 } };
-              }
-              return { meta: { changes: 1 } };
-            }
-          };
-        }
-      };
-    },
-    batch: async (statements) => {
-      batches.push(statements.map((statement) => statement.sql));
-      return [];
-    }
+    prepare(sql) { return { sql, bind: (...args) => ({ sql, args }) }; },
+    batch: async (statements) => statements.map((statement, index) => ({ meta: { changes: index === 1 ? 0 : 1 } }))
   };
-  const items = [{ id: "product-1", quantity: 1 }, { id: "product-2", quantity: 1 }];
-  const products = new Map(items.map((item) => [item.id, { priceCents: 2500 }]));
-  const reserved = await reserveOrderInventory(db, "order-partial", items, products);
-  assert.equal(reserved, false);
-  assert.equal(calls.filter((sql) => sql.startsWith("INSERT INTO order_items")).length, 1);
-  assert.equal(batches.length, 1);
-  assert.match(batches[0][0], /UPDATE products SET inventory_quantity = inventory_quantity \+/);
-  assert.match(batches[0][1], /UPDATE order_items SET inventory_reserved = 0/);
+  const items = [{ id: "product-1", quantity: 1 }];
+  const products = new Map([["product-1", { priceCents: 2500 }]]);
+  const order = { sql: "INSERT INTO orders" };
+  assert.equal(await reserveOrderInventory(db, order, "order-incomplete", items, products), false);
+});
+
+test("inventory reservation propagates transaction aborts without partial compensation writes", async () => {
+  const error = new Error("insufficient inventory");
+  let batchCalls = 0;
+  const db = {
+    prepare(sql) { return { sql, bind: (...args) => ({ sql, args }) }; },
+    batch: async () => { batchCalls += 1; throw error; },
+    prepareCalls: []
+  };
+  const items = [{ id: "product-1", quantity: 1 }];
+  const products = new Map([["product-1", { priceCents: 2500 }]]);
+  await assert.rejects(() => reserveOrderInventory(db, { sql: "INSERT INTO orders" }, "order-abort", items, products), error);
+  assert.equal(batchCalls, 1);
 });
