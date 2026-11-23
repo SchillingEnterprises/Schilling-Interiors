@@ -1,0 +1,49 @@
+name: Schilling Interiors Storefront CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "storefront/**"
+      - ".github/workflows/storefront.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "storefront/**"
+      - ".github/workflows/storefront.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: schilling-storefront-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: storefront
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Check Worker and browser JavaScript syntax
+        run: npm run check
+      - name: Run storefront validation tests
+        run: npm test
+      - name: Verify no local secrets or database files are tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find . -type f \( -name ".dev.vars" -o -name ".env" -o -name "*.sqlite3" -o -name "*.db" \) -print -quit | grep -q .; then
+            echo "Local secrets or database files must not be committed." >&2
+            exit 1
+          fi
+          test -f migrations/0001_initial.sql
+          test -f wrangler.jsonc
+          test -f public/index.html
