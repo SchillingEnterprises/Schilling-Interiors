@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
