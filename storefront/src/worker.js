@@ -154,7 +154,7 @@ function safeEqual(a, b) {
   for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
-async function verifyStripeSignature(payload, header, secret) {
+export async function verifyStripeSignature(payload, header, secret) {
   const entries = header.split(",").map((part) => {
     const index = part.indexOf("=");
     return index < 0 ? ["", ""] : [part.slice(0, index).trim(), part.slice(index + 1).trim()];
