@@ -1,41 +1,42 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
-import { parseCart, validProductInput, verifyStripeSignature } from "../src/worker.js";
-test("cart parser accepts bounded product lines", () => assert.deepEqual(parseCart([{slug:"linen-napkin",quantity:2}]), [{slug:"linen-napkin",quantity:2}]));
-test("cart parser combines duplicate lines and enforces quantity caps", () => {
- assert.deepEqual(parseCart([{slug:"linen-napkin",quantity:2},{slug:"linen-napkin",quantity:3}]), [{slug:"linen-napkin",quantity:5}]);
- assert.equal(parseCart([{slug:"linen-napkin",quantity:6},{slug:"linen-napkin",quantity:5}]), null);
+import { checkoutConfigured, constantTimeEqual, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { createHmac, randomUUID } from "node:crypto";
+
+test("admin token comparison checks full strings and rejects mismatches", () => {
+  assert.equal(constantTimeEqual("a".repeat(40), "a".repeat(40)), true);
+  assert.equal(constantTimeEqual("a".repeat(40), "a".repeat(39) + "b"), false);
+  assert.equal(constantTimeEqual("secret", ""), false);
 });
-test("cart parser rejects malformed slugs and quantities", () => {
- assert.equal(parseCart([{slug:"../admin",quantity:1}]), null);
- assert.equal(parseCart([{slug:"valid-item",quantity:0}]), null);
- assert.equal(parseCart(Array.from({length:21},(_,i)=>({slug:"item-"+i,quantity:1}))), null);
+
+test("product validation rejects unsafe URLs, invalid prices, and unknown collections", () => {
+  const good = { name: "Ceramic Bowl", slug: "ceramic-bowl", description: "Hand finished ceramic bowl.", collection: "objects", imageUrl: "https://images.example.com/bowl.jpg", priceCents: 4500, inventoryQuantity: 4, shippingRequired: true, active: true };
+  assert.equal(validateProduct(good).priceCents, 4500);
+  assert.throws(() => validateProduct({ ...good, imageUrl: "http://images.example.com/bowl.jpg" }), /HTTPS/);
+  assert.throws(() => validateProduct({ ...good, priceCents: 1 }), /Price/);
+  assert.throws(() => validateProduct({ ...good, collection: "not-a-collection" }), /collection/);
+  assert.throws(() => validateProduct({ ...good, slug: "Capital Letters" }), /slug/);
 });
-test("product validation requires complete, safe catalog fields", () => {
- const p={name:"Linen Napkin",slug:"linen-napkin",description:"Soft washed linen.",collection:"objects",image_url:"https://images.example.test/linen.jpg",price_cents:1800};
- assert.equal(validProductInput(p),true);
- assert.equal(validProductInput({...p,image_url:"javascript:alert(1)"}),false);
- assert.equal(validProductInput({...p,price_cents:-1}),false);
- assert.equal(validProductInput({...p,collection:"unknown"}),false);
+
+test("store checkout stays disabled until all operational gates are confirmed", () => {
+  const base = {
+    STORE_CHECKOUT_ENABLED: "true", STRIPE_SECRET_KEY: "sk_test_key", STRIPE_WEBHOOK_SECRET: "whsec_key",
+    TURNSTILE_SECRET_KEY: "captcha-secret", TURNSTILE_SITE_KEY: "site-key", ADMIN_API_TOKEN: "x".repeat(40),
+    PUBLIC_STORE_URL: "https://shop.example.com", STORE_POLICIES_CONFIRMED: "true", TAX_CONFIGURATION_CONFIRMED: "true"
+  };
+  assert.equal(checkoutConfigured(base), true);
+  assert.equal(checkoutConfigured({ ...base, STORE_CHECKOUT_ENABLED: "false" }), false);
+  assert.equal(checkoutConfigured({ ...base, STORE_POLICIES_CONFIRMED: "false" }), false);
+  assert.equal(checkoutConfigured({ ...base, ADMIN_API_TOKEN: "short" }), false);
+  assert.equal(checkoutConfigured({ ...base, PUBLIC_STORE_URL: "javascript:alert(1)" }), false);
 });
-test("product validation permits only safe partial updates", () => {
- assert.equal(validProductInput({active:false},true),true);
- assert.equal(validProductInput({inventory_quantity:-1},true),false);
- assert.equal(validProductInput({active:"yes"},true),false);
-});
-test("Stripe webhook signature accepts any valid v1 signature during secret rotation", async () => {
- const secret = "whsec-test-secret";
- const timestamp = Math.floor(Date.now() / 1000);
- const payload = '{"id":"evt_test"}';
- const signature = createHmac("sha256", secret).update(timestamp + "." + payload).digest("hex");
- assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=invalid,v1=" + signature, secret), true);
-});
-test("Stripe webhook signature rejects stale timestamps and invalid signatures", async () => {
- const secret = "whsec-test-secret";
- const timestamp = Math.floor(Date.now() / 1000) - 600;
- const payload = '{"id":"evt_test"}';
- const signature = createHmac("sha256", secret).update(timestamp + "." + payload).digest("hex");
- assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=" + signature, secret), false);
- assert.equal(await verifyStripeSignature(payload, "t=" + Math.floor(Date.now() / 1000) + ",v1=not-valid", secret), false);
+
+test("Stripe signature accepts only valid recent signatures", async () => {
+  const payload = JSON.stringify({ id: randomUUID() }); const secret = "whsec_example_for_tests";
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createHmac("sha256", secret).update(timestamp + "." + payload).digest("hex");
+  assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=" + signature, secret), true);
+  assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=invalid,v1=" + signature, secret), true);
+  assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=bad", secret), false);
+  assert.equal(await verifyStripeSignature(payload, "t=1,v1=" + signature, secret), false);
 });

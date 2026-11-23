@@ -15,3 +15,8 @@ This is a public static image-led archive of six historic brand collections. It 
 ## Reporting
 
 Report suspected vulnerabilities privately through GitHub's private vulnerability reporting feature when available. Do not put personal data or secrets in public issues.
+
+
+## Separate commerce application
+
+The Cloudflare storefront under storefront/ is a separate application. Keep checkout disabled until the production database, inventory controls, Stripe webhook, Turnstile, access token, tax/shipping configuration, customer policies, and fulfillment process are reviewed and tested. Never commit Worker secrets, D1 exports, customer data, or payment information. The storefront admin token must remain in a secret manager and must never be embedded in browser assets.

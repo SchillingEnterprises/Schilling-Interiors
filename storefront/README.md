@@ -1,49 +1,48 @@
 # Schilling Interiors Storefront
 
-A separate Cloudflare Worker + D1 storefront foundation. It does not replace the GitHub Pages archive and is not deployed by the Pages workflow.
+This is a separate Cloudflare Workers + D1 commerce application. It does not replace the existing GitHub Pages photo archive. The archive stays intact; this shop has its own deployment and URL.
 
 ## Implemented
 
-- Public catalog API returns active products only.
-- Product writes require a bearer token of at least 32 characters.
-- Product validation constrains slugs, collections, price ranges, inventory values, and HTTPS image URLs.
-- Cart quantities are validated server-side; checkout prices are read from D1, never trusted from the browser.
-- Stripe Checkout sessions are created server-side, with US shipping-address collection and optional configured shipping rate/tax.
-- Stripe webhook signatures are checked with HMAC-SHA256 and a five-minute timestamp tolerance; event IDs are deduplicated.
-- Static assets receive restrictive browser security headers.
-- Finite inventory is blocked at checkout until atomic stock reservation is implemented. Use null inventory only for products explicitly managed as unlimited stock.
+- Public product catalogue and shopping bag.
+- Admin-only product creation, editing, publishing/unpublishing, and read-only order list.
+- D1-backed product, order, inventory-reservation, and Stripe-event records.
+- Stripe-hosted Checkout Sessions; card details never pass through this Worker.
+- Signed Stripe webhook handling for paid, expired, and failed checkout sessions.
+- Inventory reservation in D1 batches; reserved stock is released on failed or expired checkouts.
+- Cloudflare Turnstile gate on checkout and an admin token of at least 32 characters.
+- No card details or shipping address are stored in D1.
 
-## Local development
+There are deliberately no sample products. The old photo archive is not a product catalogue, and third-party brand imagery is not automatically stock Schilling Interiors is authorized to sell. Add only products, images, prices, and inventory the business is entitled to sell.
 
-1. Use Node.js 22 or newer.
-2. From this directory, run npm test and npm run check.
-3. Use a pinned Wrangler CLI, for example: npx --yes wrangler@4.48.0 dev.
-4. Copy .dev.vars.example to .dev.vars and use Stripe test-mode credentials only.
-5. Create a local D1 database and apply migrations/0001_initial.sql before starting the Worker.
+## Local checks
 
-Never commit .dev.vars, production credentials, customer data, or database exports.
+Run from this directory:
 
-## Product administration
+\`\`\`sh
+npm test
+npm run check
+\`\`\`
 
-Create products through the authenticated Worker API. New products are inactive by default:
+For local Worker development, create a Cloudflare D1 database, replace the database ID in \`wrangler.jsonc\`, copy \`.dev.vars.example\` to \`.dev.vars\`, and use Wrangler to apply the local migration and start the Worker:
 
-    curl -X POST "$PUBLIC_STORE_URL/api/admin/products" \
-      -H "Authorization: Bearer $ADMIN_API_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d '{"name":"Linen Napkin","slug":"linen-napkin","description":"Washed linen tabletop piece.","collection":"objects","image_url":"https://images.example.com/linen.jpg","price_cents":1800,"inventory_quantity":null,"active":false}'
+\`\`\`sh
+npx wrangler d1 migrations apply schilling-interiors-store --local
+npx wrangler dev
+\`\`\`
 
-Activate a product only after confirming its details, price, stock policy, image rights, shipping/returns terms, and business authorization. PATCH /api/admin/products/{id} updates editable fields. Never place the admin token in browser code.
+The example secrets are intentionally invalid. Use Stripe test credentials, a test webhook signing secret, Turnstile keys, and a D1 database for end-to-end tests. Do not use real customer information for development.
 
-## Production release gates
+## Production deployment
 
-Do not deploy publicly or accept live payments until all of these are complete:
+The manual \`Deploy storefront\` workflow deploys the Worker and static assets. It applies D1 migrations first. It requires these GitHub repository secrets: \`CLOUDFLARE_API_TOKEN\`, \`CLOUDFLARE_ACCOUNT_ID\`, \`CLOUDFLARE_D1_DATABASE_ID\`, and \`ADMIN_API_TOKEN\`.
 
-- Create a production D1 database, set its actual ID in wrangler.jsonc, and apply migrations with a reviewed backup/restore plan.
-- Configure Worker secrets STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and a unique random ADMIN_API_TOKEN using Wrangler secrets; never put values in tracked files.
-- Configure and verify the Stripe webhook endpoint /api/stripe/webhook for checkout completion, expiration, and asynchronous payment failures.
-- Configure a real HTTPS PUBLIC_STORE_URL, shipping rates, tax policy, refund/returns policy, customer support, privacy disclosures, and fulfillment process.
-- Implement atomic inventory reservation/release before selling finite-stock products.
-- Confirm catalog accuracy, product ownership, image/trademark permissions, pricing, shipping eligibility, and applicable consumer/legal requirements.
-- Run Stripe test-mode checkout, webhook replay/idempotency, failure, cancellation, and refund scenarios before live-mode approval.
+Set these repository variables: \`PUBLIC_STORE_URL\` (the final HTTPS storefront URL), \`STORE_CHECKOUT_ENABLED=false\`, \`STORE_POLICIES_CONFIRMED=false\`, \`TAX_CONFIGURATION_CONFIRMED=false\`, \`TURNSTILE_SITE_KEY\`, \`SHIPPING_ALLOWED_COUNTRIES\` (ISO country codes; default US), and \`STRIPE_AUTOMATIC_TAX\` (keep false until correctly configured).
 
-No production database, Stripe account, secrets, or live payment configuration is created by this repository change.
+To enable paid checkout, also add secrets \`STRIPE_SECRET_KEY\`, \`STRIPE_WEBHOOK_SECRET\`, \`STRIPE_SHIPPING_RATE_ID\`, and \`TURNSTILE_SECRET_KEY\`. Configure a Stripe webhook at \`https://YOUR_STORE_HOST/api/stripe/webhook\` for \`checkout.session.completed\`, \`checkout.session.expired\`, and \`checkout.session.async_payment_failed\`. Create a Stripe shipping rate that reflects real delivery costs. Update the public Turnstile domain/site settings. Then replace the policy placeholders in \`public/policies.html\`, publish the seller's contact details and final business policies, confirm tax obligations and the payment provider's tax settings, and only then set all three confirmation/enable flags to true.
+
+Keep Stripe in test mode until a complete test order, shipping, tax, cancellation, expiration, webhook, and refund process has been verified. The deployment workflow is manual, so code pushes do not silently start taking live payments. Set up the Worker custom domain in Cloudflare and use its final HTTPS address as \`PUBLIC_STORE_URL\`.
+
+## Cost notes
+
+Cloudflare currently includes free Workers and D1 usage within published quotas; exceeding quotas, using paid Cloudflare features, purchasing a domain, and payment processing can cost money. Stripe processing fees still apply to successful payments. This is not a promise of zero-cost commerce.
