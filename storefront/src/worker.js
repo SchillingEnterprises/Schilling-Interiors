@@ -155,17 +155,19 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 async function verifyStripeSignature(payload, header, secret) {
-  const parts = Object.fromEntries(header.split(",").map((part) => {
+  const entries = header.split(",").map((part) => {
     const index = part.indexOf("=");
-    return index < 0 ? ["", ""] : [part.slice(0, index), part.slice(index + 1)];
-  }));
-  if (!parts.t || !parts.v1 || !/^\d+$/.test(parts.t)) return false;
-  const timestamp = Number(parts.t);
+    return index < 0 ? ["", ""] : [part.slice(0, index).trim(), part.slice(index + 1).trim()];
+  });
+  const timestampValue = entries.find(([key]) => key === "t")?.[1];
+  const signatures = entries.filter(([key]) => key === "v1").map(([, value]) => value);
+  if (!timestampValue || !signatures.length || !/^\d+$/.test(timestampValue)) return false;
+  const timestamp = Number(timestampValue);
   if (!Number.isSafeInteger(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) return false;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(parts.t + "." + payload)));
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(timestampValue + "." + payload)));
   const expected = [...signature].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  return parts.v1.split(";").some((candidate) => safeEqual(candidate, expected));
+  return signatures.some((candidate) => safeEqual(candidate, expected));
 }
 async function stripeWebhook(request, env) {
   const payload = await request.text();
@@ -173,18 +175,22 @@ async function stripeWebhook(request, env) {
   if (!await verifyStripeSignature(payload, signature, env.STRIPE_WEBHOOK_SECRET || "")) return json({ error: "Invalid webhook signature." }, 400);
   let event;
   try { event = JSON.parse(payload); } catch { return json({ error: "Invalid event." }, 400); }
-  const inserted = await env.DB.prepare("INSERT OR IGNORE INTO stripe_events (id, event_type) VALUES (?, ?)").bind(event.id, event.type).run();
-  if (!inserted.meta?.changes) return json({ received: true, duplicate: true });
+  const eventInsert = env.DB.prepare("INSERT OR IGNORE INTO stripe_events (id, event_type) VALUES (?, ?)").bind(event.id, event.type);
   const session = event.data?.object;
   const orderId = session?.metadata?.order_id || session?.client_reference_id;
-  if (!orderId) return json({ received: true });
-  if (event.type === "checkout.session.completed" && session.payment_status === "paid") {
-    await env.DB.prepare("UPDATE orders SET status = 'paid', amount_total_cents = ?, updated_at = datetime('now') WHERE id = ? AND stripe_session_id = ?")
-      .bind(session.amount_total || null, orderId, session.id).run();
-  } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
-    await env.DB.prepare("UPDATE orders SET status = 'expired', updated_at = datetime('now') WHERE id = ? AND status = 'pending'").bind(orderId).run();
+  if (!orderId) {
+    const inserted = await eventInsert.run();
+    return json({ received: true, duplicate: !inserted.meta?.changes });
   }
-  return json({ received: true });
+  let orderUpdate = null;
+  if ((event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") && session.payment_status === "paid") {
+    orderUpdate = env.DB.prepare("UPDATE orders SET status = 'paid', amount_total_cents = ?, updated_at = datetime('now') WHERE id = ? AND stripe_session_id = ?")
+      .bind(session.amount_total || null, orderId, session.id);
+  } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
+    orderUpdate = env.DB.prepare("UPDATE orders SET status = 'expired', updated_at = datetime('now') WHERE id = ? AND status = 'pending'").bind(orderId);
+  }
+  const results = await env.DB.batch(orderUpdate ? [eventInsert, orderUpdate] : [eventInsert]);
+  return json({ received: true, duplicate: !results[0]?.meta?.changes });
 }
 async function adminProducts(request, env, id = null) {
   if (!authorized(request, env)) return json({ error: "Unauthorized." }, 401);
