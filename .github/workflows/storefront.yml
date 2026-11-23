@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: schilling-interiors-storefront-\${{ github.ref }}
+  group: schilling-interiors-storefront-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
