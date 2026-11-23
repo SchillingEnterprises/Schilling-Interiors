@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Store Admin | Schilling Interiors</title><link rel="stylesheet" href="./store.css"><script src="./admin.js" defer></script></head>
+<body>
+<header class="header"><a class="brand" href="./index.html"><span class="brand-mark">S</span><span>Schilling Interiors</span></a><nav aria-label="Admin navigation"><a href="./index.html">View shop</a></nav></header>
+<main class="admin-main" id="main">
+  <p class="eyebrow">PRIVATE STORE MANAGEMENT</p><h1 class="admin-heading">Store admin.</h1>
+  <p class="notice">This page is not an access control. All management actions require the private admin token; keep it out of shared devices and browser screenshots.</p>
+  <section class="admin-section"><h2>Admin access</h2><label for="admin-token">Private admin token</label><input id="admin-token" type="password" autocomplete="off" minlength="32" placeholder="Paste your store admin token"><button id="connect" class="small-button" type="button">Connect securely</button><p id="admin-status" class="message" role="status" aria-live="polite">Not connected.</p></section>
+  <section class="admin-section"><h2 id="product-form-heading">Add a product</h2>
+    <form id="product-form" class="admin-form">
+      <input id="product-id" type="hidden">
+      <div><label for="name">Product name</label><input id="name" maxlength="120" required></div>
+      <div><label for="slug">URL slug</label><input id="slug" maxlength="140" pattern="[a-z0-9]+(-[a-z0-9]+)*" required></div>
+      <div class="wide"><label for="description">Description</label><textarea id="description" maxlength="2000" required></textarea></div>
+      <div><label for="collection">Collection</label><select id="collection"><option value="interiors">Interiors</option><option value="objects">Objects</option><option value="fashion">Fashion</option><option value="gifts">Gifts</option></select></div>
+      <div><label for="image-url">Product image URL (HTTPS)</label><input id="image-url" type="url" required></div>
+      <div><label for="price">Price (USD)</label><input id="price" type="number" min="0.50" max="100000" step="0.01" required></div>
+      <div><label for="inventory">Inventory (blank = unlimited)</label><input id="inventory" type="number" min="0" max="1000000" step="1"></div>
+      <label class="check"><input id="shipping-required" type="checkbox" checked> Physical product; shipping required</label>
+      <label class="check"><input id="active" type="checkbox"> Publish product immediately</label>
+      <div class="wide"><button class="small-button" type="submit">Save product</button> <button id="reset-form" class="small-button" type="button">Clear</button></div>
+    </form>
+  </section>
+  <section class="admin-section"><h2>Products</h2><div id="product-list" class="admin-list"><p class="muted">Connect to load products.</p></div></section>
+  <section class="admin-section"><h2>Recent orders</h2><div id="order-list" class="admin-list"><p class="muted">Connect to load orders.</p></div></section>
+</main>
+<footer class="footer"><a class="brand" href="./index.html"><span class="brand-mark">S</span><span>Schilling Interiors</span></a><a href="./index.html">Return to shop</a></footer>
+</body></html>
