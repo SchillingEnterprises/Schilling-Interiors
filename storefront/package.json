@@ -1,0 +1,1 @@
+{"name":"schilling-interiors-storefront","private":true,"type":"module","scripts":{"test":"node --test","check":"node --check src/worker.js && node --check public/store.js && node --check public/success.js"}}
