@@ -31,6 +31,28 @@ test("store checkout stays disabled until all operational gates are confirmed", 
   assert.equal(checkoutConfigured({ ...base, PUBLIC_STORE_URL: "javascript:alert(1)" }), false);
 });
 
+test("paid Stripe sessions must match order identity, currency, subtotal, and total", () => {
+  const order = { id: "order-1", currency: "usd", subtotal_cents: 5000 };
+  const session = {
+    id: "cs_test_abc123",
+    mode: "payment",
+    payment_status: "paid",
+    currency: "usd",
+    amount_subtotal: 5000,
+    amount_total: 5500,
+    metadata: { order_id: "order-1" },
+    client_reference_id: "order-1"
+  };
+  assert.equal(validPaidCheckoutSession(session, order), true);
+  assert.equal(validPaidCheckoutSession({ ...session, currency: "eur" }, order), false);
+  assert.equal(validPaidCheckoutSession({ ...session, amount_subtotal: 4900 }, order), false);
+  assert.equal(validPaidCheckoutSession({ ...session, amount_total: 4800 }, order), false);
+  assert.equal(validPaidCheckoutSession({ ...session, client_reference_id: "another-order" }, order), false);
+  assert.equal(validPaidCheckoutSession({ ...session, metadata: { order_id: "another-order" } }, order), false);
+  assert.equal(validPaidCheckoutSession({ ...session, mode: "subscription" }, order), false);
+  assert.equal(validPaidCheckoutSession({ ...session, payment_status: "unpaid" }, order), false);
+});
+
 test("Stripe signature accepts only valid recent signatures", async () => {
   const payload = JSON.stringify({ id: randomUUID() }); const secret = "whsec_example_for_tests";
   const timestamp = String(Math.floor(Date.now() / 1000));
