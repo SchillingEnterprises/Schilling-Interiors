@@ -36,6 +36,7 @@ test("Stripe signature accepts only valid recent signatures", async () => {
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = createHmac("sha256", secret).update(timestamp + "." + payload).digest("hex");
   assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=" + signature, secret), true);
+  assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=invalid,v1=" + signature, secret), true);
   assert.equal(await verifyStripeSignature(payload, "t=" + timestamp + ",v1=bad", secret), false);
   assert.equal(await verifyStripeSignature(payload, "t=1,v1=" + signature, secret), false);
 });
