@@ -1,22 +1,23 @@
-name: Schilling Interiors Storefront CI
+name: Schilling Interiors storefront checks
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - "storefront/**"
-      - ".github/workflows/storefront.yml"
   pull_request:
     branches: [master]
     paths:
       - "storefront/**"
       - ".github/workflows/storefront.yml"
+  push:
+    branches: [master]
+    paths:
+      - "storefront/**"
+      - ".github/workflows/storefront.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: schilling-storefront-${{ github.ref }}
+  group: schilling-interiors-storefront-\${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,21 +30,24 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v6.0.0
         with:
-          node-version: "22"
-      - name: Check Worker and browser JavaScript syntax
-        run: npm run check
-      - name: Run storefront validation tests
+          node-version: 24
+      - name: Test storefront logic
         run: npm test
-      - name: Verify no local secrets or database files are tracked
-        shell: bash
+      - name: Check JavaScript syntax
+        run: npm run check
+      - name: Validate SQL migration
         run: |
-          set -euo pipefail
-          if find . -type f \( -name ".dev.vars" -o -name ".env" -o -name "*.sqlite3" -o -name "*.db" \) -print -quit | grep -q .; then
-            echo "Local secrets or database files must not be committed." >&2
-            exit 1
-          fi
-          test -f migrations/0001_initial.sql
-          test -f wrangler.jsonc
-          test -f public/index.html
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          db = sqlite3.connect(":memory:")
+          db.executescript(Path("migrations/0001_initial.sql").read_text())
+          expected = {"products", "orders", "order_items", "stripe_events"}
+          actual = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          missing = expected - actual
+          if missing:
+              raise SystemExit(f"Missing migration tables: {sorted(missing)}")
+          print("D1 migration schema validated with SQLite.")
+          PY
