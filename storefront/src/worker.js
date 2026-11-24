@@ -18,7 +18,8 @@ function safeStoreUrl(value) {
 }
 function checkoutConfigured(env) {
   return env.STORE_CHECKOUT_ENABLED === "true"
-    && Boolean(env.STRIPE_SECRET_KEY)
+    && typeof env.STRIPE_SECRET_KEY === "string"
+    && env.STRIPE_SECRET_KEY.startsWith("sk_test_")
     && Boolean(env.STRIPE_WEBHOOK_SECRET)
     && Boolean(env.TURNSTILE_SECRET_KEY)
     && Boolean(env.TURNSTILE_SITE_KEY)
@@ -191,7 +192,7 @@ function validPaidCheckoutSession(session, order) {
   return Boolean(
     session
     && session.id
-    && /^cs_(test|live)_[A-Za-z0-9]+$/.test(session.id)
+    && /^cs_test_[A-Za-z0-9]+$/.test(session.id)
     && session.mode === "payment"
     && session.payment_status === "paid"
     && String(session.currency || "").toLowerCase() === order.currency
@@ -291,7 +292,7 @@ async function route(request, env) {
   if (url.pathname === "/api/stripe/webhook" && request.method === "POST") return handleStripeWebhook(request, env);
   if (url.pathname === "/api/order-status" && request.method === "GET") {
     const sessionId = url.searchParams.get("session_id") || "";
-    if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId)) return json({ error: "Invalid checkout session." }, 400);
+    if (!/^cs_test_[A-Za-z0-9]+$/.test(sessionId)) return json({ error: "Invalid checkout session." }, 400);
     const order = await env.DB.prepare("SELECT status FROM orders WHERE stripe_session_id = ?").bind(sessionId).first();
     return order ? json({ status: order.status }) : json({ error: "Order not found." }, 404);
   }
