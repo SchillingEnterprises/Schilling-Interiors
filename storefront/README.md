@@ -47,3 +47,8 @@ This release intentionally accepts only Stripe test-mode API keys (`sk_test_`) a
 ## Cost notes
 
 Cloudflare currently includes free Workers and D1 usage within published quotas; exceeding quotas, using paid Cloudflare features, purchasing a domain, and payment processing can cost money. Stripe processing fees still apply to successful payments. This is not a promise of zero-cost commerce.
+## Order fulfillment and refunds
+
+The admin order view supports the guarded paid-order lifecycle: unfulfilled → processing → shipped → fulfilled. Marking an order shipped requires a carrier, tracking number, and HTTPS tracking URL. Shipping addresses are retrieved on demand from the matching Stripe test Checkout Session for an authenticated admin; they are not persisted in D1 or written to logs. The admin view does not expose customer email or payment details.
+
+A full-refund action is available only for a paid order linked to a verified Stripe test-mode Checkout Session and only when the Worker has an `sk_test_` key. The admin must explicitly confirm the action. Refund requests use a stable per-order Stripe idempotency key, and an uncertain provider response leaves the order in a pending refund state for reconciliation rather than permitting a duplicate retry. This is a test-mode engineering workflow, not production refund approval or live-payment capability.
