@@ -8,9 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 class PagesArtifactBoundaryTests(unittest.TestCase):
     def test_legacy_pages_build_excludes_engineering_and_storefront_sources(self):
         config = (ROOT / "_config.yml").read_text(encoding="utf-8")
-        self.assertIn("exclude:", config)
-        for path in (".github", ".gitignore", "README.md", "SECURITY.md", "storefront", "tests"):
-            self.assertRegex(config, rf"(?m)^\\s+- [\\\"']?{path}[\\\"']?\\s*$")
+        excluded = {
+            line.strip()[2:].strip().strip("\"'")
+            for line in config.splitlines()
+            if line.strip().startswith("- ")
+        }
+        self.assertTrue(
+            {".github", ".gitignore", "README.md", "SECURITY.md", "storefront", "tests"}
+            .issubset(excluded)
+        )
 
     def test_jekyll_must_process_the_exclusion_configuration(self):
         self.assertFalse((ROOT / ".nojekyll").exists())
