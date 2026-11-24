@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
@@ -232,4 +232,21 @@ test("admin product API rejects JSON primitives and arrays as invalid bodies", a
     assert.equal(response.status, 400);
     assert.equal((await response.json()).error, "Request body must be a JSON object.");
   }
+});
+
+
+test("fulfillment updates require safe HTTPS tracking and supported states", () => {
+  assert.deepEqual(validateFulfillmentUpdate({ fulfillmentStatus: "processing" }), {
+    fulfillmentStatus: "processing", trackingCarrier: "", trackingNumber: "", trackingUrl: ""
+  });
+  assert.deepEqual(validateFulfillmentUpdate({
+    fulfillmentStatus: "shipped", trackingCarrier: "UPS", trackingNumber: "1Z123",
+    trackingUrl: "https://www.ups.com/track?loc=1Z123"
+  }), {
+    fulfillmentStatus: "shipped", trackingCarrier: "UPS", trackingNumber: "1Z123",
+    trackingUrl: "https://www.ups.com/track?loc=1Z123"
+  });
+  assert.throws(() => validateFulfillmentUpdate({ fulfillmentStatus: "shipped" }), /required before marking/);
+  assert.throws(() => validateFulfillmentUpdate({ fulfillmentStatus: "shipped", trackingCarrier: "UPS", trackingNumber: "1Z123", trackingUrl: "http://unsafe.example/track" }), /HTTPS/);
+  assert.throws(() => validateFulfillmentUpdate({ fulfillmentStatus: "refunded" }), /valid fulfillment status/);
 });
