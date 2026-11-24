@@ -36,7 +36,37 @@ function renderOrders(orders) {
     const row = document.createElement("div"); row.className = "admin-row"; const detail = document.createElement("div");
     node(detail, "strong", order.status.toUpperCase() + " · " + money(order.amountTotalCents ?? order.subtotalCents));
     node(detail, "small", order.createdAt + " · " + order.items.map((item) => item.quantity + " × " + item.name).join(", "), "order-items");
-    node(row, "code", order.id); row.append(detail); orderList.append(row);
+    node(detail, "small", "Fulfillment: " + (order.fulfillmentStatus || "unfulfilled"));
+    if (order.trackingCarrier || order.trackingNumber) node(detail, "small", [order.trackingCarrier, order.trackingNumber].filter(Boolean).join(" · "));
+    node(row, "code", order.id);
+    if (order.status === "paid" && order.fulfillmentStatus === "unfulfilled") {
+      const start = node(row, "button", "Start processing", "small-button"); start.type = "button";
+      start.addEventListener("click", async () => {
+        try { await api("/api/admin/orders/" + order.id + "/fulfillment", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ fulfillmentStatus: "processing" }) }); await load(); }
+        catch (error) { statusNode.textContent = error.message; }
+      });
+    } else if (order.status === "paid" && order.fulfillmentStatus === "processing") {
+      const shipping = document.createElement("form"); shipping.className = "admin-form";
+      const fields = [["Carrier", "trackingCarrier"], ["Tracking number", "trackingNumber"], ["HTTPS tracking URL", "trackingUrl"]];
+      for (const [label, key] of fields) {
+        const input = document.createElement("input"); input.type = "text"; input.required = true; input.maxLength = key === "trackingCarrier" ? 80 : key === "trackingNumber" ? 120 : 2048; input.placeholder = label; input.setAttribute("aria-label", label); input.value = order[key] || ""; input.dataset.field = key; shipping.append(input);
+      }
+      const submit = node(shipping, "button", "Save tracking and mark shipped", "small-button"); submit.type = "submit";
+      shipping.addEventListener("submit", async (event) => {
+        event.preventDefault(); const body = { fulfillmentStatus: "shipped" };
+        for (const input of shipping.querySelectorAll("input")) body[input.dataset.field] = input.value.trim();
+        try { await api("/api/admin/orders/" + order.id + "/fulfillment", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); await load(); }
+        catch (error) { statusNode.textContent = error.message; }
+      });
+      row.append(shipping);
+    } else if (order.status === "paid" && order.fulfillmentStatus === "shipped") {
+      const complete = node(row, "button", "Mark fulfilled", "small-button"); complete.type = "button";
+      complete.addEventListener("click", async () => {
+        try { await api("/api/admin/orders/" + order.id + "/fulfillment", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ fulfillmentStatus: "fulfilled" }) }); await load(); }
+        catch (error) { statusNode.textContent = error.message; }
+      });
+    }
+    row.append(detail); orderList.append(row);
   }
 }
 function editProduct(product) {

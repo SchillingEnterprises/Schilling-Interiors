@@ -251,6 +251,22 @@ async function handleStripeWebhook(request, env) {
   statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
   await db.batch(statements); return text("ok", 200);
 }
+function validateFulfillmentUpdate(input) {
+  const fulfillmentStatus = typeof input.fulfillmentStatus === "string" ? input.fulfillmentStatus.trim() : "";
+  const trackingCarrier = typeof input.trackingCarrier === "string" ? input.trackingCarrier.trim() : "";
+  const trackingNumber = typeof input.trackingNumber === "string" ? input.trackingNumber.trim() : "";
+  const trackingUrl = typeof input.trackingUrl === "string" ? input.trackingUrl.trim() : "";
+  if (!["processing", "shipped", "fulfilled"].includes(fulfillmentStatus)) throw new Error("Choose a valid fulfillment status.");
+  if (trackingCarrier.length > 80 || trackingNumber.length > 120) throw new Error("Tracking details are too long.");
+  if (trackingUrl) {
+    let parsed;
+    try { parsed = new URL(trackingUrl); } catch { throw new Error("Tracking URL must be a valid HTTPS URL."); }
+    if (parsed.protocol !== "https:") throw new Error("Tracking URL must use HTTPS.");
+  }
+  if (fulfillmentStatus === "shipped" && (!trackingCarrier || !trackingNumber || !trackingUrl)) throw new Error("Carrier, tracking number, and HTTPS tracking URL are required before marking an order shipped.");
+  return { fulfillmentStatus, trackingCarrier, trackingNumber, trackingUrl };
+}
+
 async function adminRequest(request, env, path) {
   if (!await requireAdmin(request, env)) return json({ error: "Unauthorized." }, 401);
   if (request.method === "GET" && path === "/api/admin/products") {
@@ -258,8 +274,27 @@ async function adminRequest(request, env, path) {
     return json({ products: result.results || [] });
   }
   if (request.method === "GET" && path === "/api/admin/orders") {
-    const result = await env.DB.prepare("SELECT id, status, currency, subtotal_cents AS subtotalCents, amount_total_cents AS amountTotalCents, items_json AS itemsJson, created_at AS createdAt FROM orders ORDER BY created_at DESC LIMIT 100").all();
+    const result = await env.DB.prepare("SELECT id, status, fulfillment_status AS fulfillmentStatus, tracking_carrier AS trackingCarrier, tracking_number AS trackingNumber, tracking_url AS trackingUrl, shipped_at AS shippedAt, fulfilled_at AS fulfilledAt, currency, subtotal_cents AS subtotalCents, amount_total_cents AS amountTotalCents, items_json AS itemsJson, created_at AS createdAt FROM orders ORDER BY created_at DESC LIMIT 100").all();
     return json({ orders: (result.results || []).map((order) => ({ ...order, items: JSON.parse(order.itemsJson || "[]") })) });
+  }
+  const fulfillmentMatch = path.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/fulfillment$/i);
+  if (fulfillmentMatch && request.method === "PATCH") {
+    const update = validateFulfillmentUpdate(await readJson(request));
+    const current = await env.DB.prepare("SELECT status, fulfillment_status, tracking_carrier, tracking_number, tracking_url FROM orders WHERE id = ?").bind(fulfillmentMatch[1]).first();
+    if (!current) return json({ error: "Order not found." }, 404);
+    if (current.status !== "paid") return json({ error: "Only paid orders can enter fulfillment." }, 409);
+    const transitions = { unfulfilled: ["processing"], processing: ["shipped", "fulfilled"], shipped: ["fulfilled"], fulfilled: [] };
+    if (update.fulfillmentStatus !== current.fulfillment_status && !transitions[current.fulfillment_status]?.includes(update.fulfillmentStatus)) {
+      return json({ error: "That fulfillment status transition is not allowed." }, 409);
+    }
+    const carrier = update.trackingCarrier || current.tracking_carrier || null;
+    const trackingNumber = update.trackingNumber || current.tracking_number || null;
+    const trackingUrl = update.trackingUrl || current.tracking_url || null;
+    if (update.fulfillmentStatus === "shipped" && (!carrier || !trackingNumber || !trackingUrl)) return json({ error: "Carrier, tracking number, and HTTPS tracking URL are required before marking an order shipped." }, 400);
+    const saved = await env.DB.prepare("UPDATE orders SET fulfillment_status = ?, tracking_carrier = ?, tracking_number = ?, tracking_url = ?, shipped_at = CASE WHEN ? = 'shipped' THEN COALESCE(shipped_at, datetime('now')) ELSE shipped_at END, fulfilled_at = CASE WHEN ? = 'fulfilled' THEN COALESCE(fulfilled_at, datetime('now')) ELSE fulfilled_at END, updated_at = datetime('now') WHERE id = ? AND status = 'paid' AND fulfillment_status = ?")
+      .bind(update.fulfillmentStatus, carrier, trackingNumber, trackingUrl, update.fulfillmentStatus, update.fulfillmentStatus, fulfillmentMatch[1], current.fulfillment_status).run();
+    if (saved.meta?.changes !== 1) return json({ error: "Order changed while saving. Reload and try again." }, 409);
+    return json({ saved: true, fulfillmentStatus: update.fulfillmentStatus });
   }
   if (request.method === "POST" && path === "/api/admin/products") {
     const product = validateProduct(await readJson(request)); const id = crypto.randomUUID();
@@ -310,10 +345,10 @@ export default {
     catch (error) {
       const message = error instanceof Error ? error.message : "Unexpected error.";
       const validation = ["Request body is too large.", "Request body must be valid JSON.", "Request body must be a JSON object."].includes(message)
-        || message.startsWith("Product ") || message.startsWith("Use a unique") || message.startsWith("Price ") || message.startsWith("Inventory ") || message.startsWith("Choose ") || message.startsWith("A product does not have enough stock.");
+        || message.startsWith("Product ") || message.startsWith("Use a unique") || message.startsWith("Price ") || message.startsWith("Inventory ") || message.startsWith("Choose ") || message.startsWith("Tracking ") || message.startsWith("Carrier, tracking") || message.startsWith("A product does not have enough stock.");
       const conflict = message.startsWith("A product does not have enough stock.");
       return json({ error: message }, conflict ? 409 : validation ? 400 : 500);
     }
   }
 };
-export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateProduct, verifyStripeSignature };
+export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
