@@ -53,3 +53,7 @@ The admin order view supports the guarded paid-order lifecycle: unfulfilled → 
 
 A full-refund action is available only for a paid order linked to a verified Stripe test-mode Checkout Session and only when the Worker has an `sk_test_` key. The admin must explicitly confirm the action. Refund requests use a stable per-order Stripe idempotency key, and an uncertain provider response leaves the order in a pending refund state for reconciliation rather than permitting a duplicate retry. This is a test-mode engineering workflow, not production refund approval or live-payment capability.
 The refund migration stores nullable provider IDs with a separate partial unique index so orders without refunds remain valid in SQLite/D1.
+
+### Customer order tracking
+
+The post-checkout confirmation page accepts only test-mode Checkout Session IDs and displays payment and fulfillment status. Once an authenticated administrator marks an order shipped with a carrier, tracking number, and HTTPS tracking URL, the customer confirmation page can display a direct carrier-tracking link. The public status response intentionally contains no customer email, shipping address, order line items, or payment details; the Checkout Session ID acts as the unguessable lookup reference.
