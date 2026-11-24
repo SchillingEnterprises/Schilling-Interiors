@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, linkStripeSession, refundIdempotencyKey, refundPaymentIntentFromSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { checkoutConfigured, constantTimeEqual, linkStripeSession, publicOrderStatus, refundIdempotencyKey, refundPaymentIntentFromSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
@@ -290,4 +290,24 @@ test("refunds require the matching paid test-mode Checkout Session and payment i
   assert.equal(refundPaymentIntentFromSession({ ...session, payment_status: "unpaid" }, "order-1", "cs_test_refund123"), "");
   assert.equal(refundPaymentIntentFromSession({ ...session, payment_intent: "not-a-payment-intent" }, "order-1", "cs_test_refund123"), "");
   assert.equal(refundIdempotencyKey("order-1"), "schilling-interiors-refund-order-1");
+});
+
+
+test("public order status exposes only fulfillment and verified HTTPS tracking data", () => {
+  const result = publicOrderStatus({
+    status: "paid",
+    fulfillmentStatus: "shipped",
+    trackingCarrier: "UPS",
+    trackingNumber: "1ZTEST123",
+    trackingUrl: "https://www.ups.com/track?tracknum=1ZTEST123",
+    customerEmail: "private@example.test",
+    shippingAddress: "not returned"
+  });
+  assert.deepEqual(result, {
+    status: "paid",
+    fulfillmentStatus: "shipped",
+    tracking: { carrier: "UPS", number: "1ZTEST123", url: "https://www.ups.com/track?tracknum=1ZTEST123" }
+  });
+  assert.equal(publicOrderStatus({ status: "paid", fulfillmentStatus: "shipped", trackingCarrier: "UPS", trackingNumber: "1Z", trackingUrl: "javascript:alert(1)" }).tracking, null);
+  assert.equal(publicOrderStatus({ status: "paid", fulfillmentStatus: "processing", trackingCarrier: "UPS", trackingNumber: "1Z", trackingUrl: "https://example.test" }).tracking, null);
 });
