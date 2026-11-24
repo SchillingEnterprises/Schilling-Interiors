@@ -251,6 +251,21 @@ async function handleStripeWebhook(request, env) {
   statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
   await db.batch(statements); return text("ok", 200);
 }
+function publicOrderStatus(order) {
+  const status = ["pending", "paid", "canceled"].includes(order?.status) ? order.status : "pending";
+  const fulfillmentStatus = ["unfulfilled", "processing", "shipped", "fulfilled"].includes(order?.fulfillmentStatus)
+    ? order.fulfillmentStatus : "unfulfilled";
+  let tracking = null;
+  if (status === "paid" && ["shipped", "fulfilled"].includes(fulfillmentStatus)) {
+    const carrier = typeof order.trackingCarrier === "string" ? order.trackingCarrier.trim().slice(0, 80) : "";
+    const number = typeof order.trackingNumber === "string" ? order.trackingNumber.trim().slice(0, 120) : "";
+    try {
+      const url = new URL(order.trackingUrl);
+      if (carrier && number && url.protocol === "https:") tracking = { carrier, number, url: url.toString() };
+    } catch { /* Do not expose incomplete or unsafe tracking details. */ }
+  }
+  return { status, fulfillmentStatus, tracking };
+}
 function refundPaymentIntentFromSession(session, orderId, sessionId) {
   if (!session || session.id !== sessionId || !/^cs_test_[A-Za-z0-9]+$/.test(session.id)
     || session.mode !== "payment" || session.payment_status !== "paid"
@@ -435,8 +450,8 @@ async function route(request, env) {
   if (url.pathname === "/api/order-status" && request.method === "GET") {
     const sessionId = url.searchParams.get("session_id") || "";
     if (!/^cs_test_[A-Za-z0-9]+$/.test(sessionId)) return json({ error: "Invalid checkout session." }, 400);
-    const order = await env.DB.prepare("SELECT status FROM orders WHERE stripe_session_id = ?").bind(sessionId).first();
-    return order ? json({ status: order.status }) : json({ error: "Order not found." }, 404);
+    const order = await env.DB.prepare("SELECT status, fulfillment_status AS fulfillmentStatus, tracking_carrier AS trackingCarrier, tracking_number AS trackingNumber, tracking_url AS trackingUrl FROM orders WHERE stripe_session_id = ?").bind(sessionId).first();
+    return order ? json(publicOrderStatus(order)) : json({ error: "Order not found." }, 404);
   }
   if (url.pathname.startsWith("/api/admin/")) return adminRequest(request, env, url.pathname);
   if (url.pathname.startsWith("/api/")) return json({ error: "Not found." }, 404);
@@ -454,4 +469,4 @@ export default {
     }
   }
 };
-export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, refundIdempotencyKey, refundPaymentIntentFromSession, safeAddressField, shippingAddressFromSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
+export { checkoutConfigured, constantTimeEqual, linkStripeSession, publicOrderStatus, reserveOrderInventory, validPaidCheckoutSession, refundIdempotencyKey, refundPaymentIntentFromSession, safeAddressField, shippingAddressFromSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
