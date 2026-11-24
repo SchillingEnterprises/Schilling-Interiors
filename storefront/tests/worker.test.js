@@ -29,6 +29,7 @@ test("store checkout stays disabled until all operational gates are confirmed", 
   assert.equal(checkoutConfigured({ ...base, STORE_POLICIES_CONFIRMED: "false" }), false);
   assert.equal(checkoutConfigured({ ...base, ADMIN_API_TOKEN: "short" }), false);
   assert.equal(checkoutConfigured({ ...base, PUBLIC_STORE_URL: "javascript:alert(1)" }), false);
+  assert.equal(checkoutConfigured({ ...base, STRIPE_SECRET_KEY: "sk_live_example" }), false);
 });
 
 test("paid Stripe sessions must match order identity, currency, subtotal, and total", () => {
@@ -44,6 +45,7 @@ test("paid Stripe sessions must match order identity, currency, subtotal, and to
     client_reference_id: "order-1"
   };
   assert.equal(validPaidCheckoutSession(session, order), true);
+  assert.equal(validPaidCheckoutSession({ ...session, id: "cs_live_abc123" }, order), false);
   assert.equal(validPaidCheckoutSession({ ...session, currency: "eur" }, order), false);
   assert.equal(validPaidCheckoutSession({ ...session, amount_subtotal: 4900 }, order), false);
   assert.equal(validPaidCheckoutSession({ ...session, amount_total: 4800 }, order), false);
@@ -95,6 +97,14 @@ test("public config reports checkout disabled when production gates are absent",
   assert.equal((await response.json()).checkoutEnabled, false);
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});
+
+test("live Stripe Checkout sessions are rejected by the order-status route", async () => {
+  const response = await (await import("../src/worker.js")).default.fetch(
+    new Request("https://shop.example.com/api/order-status?session_id=cs_live_abc123"),
+    {}
+  );
+  assert.equal(response.status, 400);
 });
 
 test("checkout fails closed before reading a request or contacting payment services", async () => {
