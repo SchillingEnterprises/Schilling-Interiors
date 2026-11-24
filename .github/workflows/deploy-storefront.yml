@@ -45,6 +45,10 @@ jobs:
           done
           if [[ "${#ADMIN_API_TOKEN}" -lt 32 ]]; then echo "ADMIN_API_TOKEN must be at least 32 characters." >&2; exit 1; fi
           if [[ "$PUBLIC_STORE_URL" != https://* ]]; then echo "PUBLIC_STORE_URL must be the final HTTPS storefront URL." >&2; exit 1; fi
+          if [[ -n "${STRIPE_SECRET_KEY:-}" && "$STRIPE_SECRET_KEY" != sk_test_* ]]; then
+            echo "Only Stripe test-mode secret keys are permitted by this release workflow." >&2
+            exit 1
+          fi
           if [[ "$STORE_CHECKOUT_ENABLED" == "true" ]]; then
             payment_required=(STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_SHIPPING_RATE_ID TURNSTILE_SECRET_KEY TURNSTILE_SITE_KEY)
             for key in "${payment_required[@]}"; do
