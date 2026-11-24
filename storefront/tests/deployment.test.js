@@ -6,13 +6,13 @@ const workflow = readFileSync(new URL("../../.github/workflows/deploy-storefront
 const wrangler = JSON.parse(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
 
 test("storefront production deployment remains manually triggered only", () => {
-  const triggers = workflow.match(/^on:\\n([\\s\\S]*?)(?=^permissions:)/m)?.[1] ?? "";
-  assert.match(triggers, /^\\s+workflow_dispatch:\\s*$/m);
-  assert.doesNotMatch(triggers, /^\\s+(push|pull_request|schedule):/m);
+  const triggers = workflow.match(/^on:\n([\s\S]*?)(?=^permissions:)/m)?.[1] ?? "";
+  assert.match(triggers, /^\s+workflow_dispatch:\s*$/m);
+  assert.doesNotMatch(triggers, /^\s+(push|pull_request|schedule):/m);
 });
 
 test("deployment refuses live Stripe API keys", () => {
-  assert.match(workflow, /STRIPE_SECRET_KEY.*?!= sk_test_\\*/s);
+  assert.match(workflow, /STRIPE_SECRET_KEY.*?!= sk_test_\*/s);
 });
 
 test("paid checkout requires all payment and business release gates", () => {
