@@ -251,6 +251,17 @@ async function handleStripeWebhook(request, env) {
   statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
   await db.batch(statements); return text("ok", 200);
 }
+function refundPaymentIntentFromSession(session, orderId, sessionId) {
+  if (!session || session.id !== sessionId || !/^cs_test_[A-Za-z0-9]+$/.test(session.id)
+    || session.mode !== "payment" || session.payment_status !== "paid"
+    || session.metadata?.order_id !== orderId || session.client_reference_id !== orderId) return "";
+  const paymentIntent = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+  return typeof paymentIntent === "string" && /^pi_[A-Za-z0-9]+$/.test(paymentIntent) ? paymentIntent : "";
+}
+function refundIdempotencyKey(orderId) {
+  return "schilling-interiors-refund-" + orderId;
+}
+
 function safeAddressField(value) {
   return typeof value === "string" ? value.trim().slice(0, 200) : "";
 }
@@ -294,8 +305,59 @@ async function adminRequest(request, env, path) {
     return json({ products: result.results || [] });
   }
   if (request.method === "GET" && path === "/api/admin/orders") {
-    const result = await env.DB.prepare("SELECT id, status, fulfillment_status AS fulfillmentStatus, tracking_carrier AS trackingCarrier, tracking_number AS trackingNumber, tracking_url AS trackingUrl, shipped_at AS shippedAt, fulfilled_at AS fulfilledAt, currency, subtotal_cents AS subtotalCents, amount_total_cents AS amountTotalCents, items_json AS itemsJson, created_at AS createdAt FROM orders ORDER BY created_at DESC LIMIT 100").all();
+    const result = await env.DB.prepare("SELECT id, status, fulfillment_status AS fulfillmentStatus, tracking_carrier AS trackingCarrier, tracking_number AS trackingNumber, tracking_url AS trackingUrl, shipped_at AS shippedAt, fulfilled_at AS fulfilledAt, refund_status AS refundStatus, refund_id AS refundId, refund_amount_cents AS refundAmountCents, currency, subtotal_cents AS subtotalCents, amount_total_cents AS amountTotalCents, items_json AS itemsJson, created_at AS createdAt FROM orders ORDER BY created_at DESC LIMIT 100").all();
     return json({ orders: (result.results || []).map((order) => ({ ...order, items: JSON.parse(order.itemsJson || "[]") })) });
+  }
+  const refundMatch = path.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/refund$/i);
+  if (refundMatch && request.method === "POST") {
+    const input = await readJson(request);
+    if (input.confirm !== true) return json({ error: "Explicit refund confirmation is required." }, 400);
+    const order = await env.DB.prepare("SELECT status, stripe_session_id, refund_status FROM orders WHERE id = ?").bind(refundMatch[1]).first();
+    if (!order) return json({ error: "Order not found." }, 404);
+    if (order.status !== "paid") return json({ error: "Only paid orders can be refunded." }, 409);
+    if (order.refund_status !== "none") return json({ error: "A refund is already pending or has been processed. Reconcile it with the payment provider before retrying." }, 409);
+    if (typeof env.STRIPE_SECRET_KEY !== "string" || !env.STRIPE_SECRET_KEY.startsWith("sk_test_")) return json({ error: "Test-mode payment-provider access is not configured." }, 503);
+    if (!/^cs_test_[A-Za-z0-9]+$/.test(order.stripe_session_id || "")) return json({ error: "A valid test-mode checkout session is not linked to this order." }, 404);
+    let sessionResponse;
+    try {
+      sessionResponse = await fetch("https://api.stripe.com/v1/checkout/sessions/" + encodeURIComponent(order.stripe_session_id), {
+        headers: { authorization: "Bearer " + env.STRIPE_SECRET_KEY }
+      });
+    } catch {
+      return json({ error: "The payment session could not be verified. No refund was requested." }, 502);
+    }
+    if (!sessionResponse.ok) return json({ error: "The payment session could not be verified. No refund was requested." }, 502);
+    const session = await sessionResponse.json().catch(() => null);
+    const paymentIntent = refundPaymentIntentFromSession(session, refundMatch[1], order.stripe_session_id);
+    if (!paymentIntent) return json({ error: "The test-mode payment session does not match this paid order." }, 409);
+    const reserved = await env.DB.prepare("UPDATE orders SET refund_status = 'pending', updated_at = datetime('now') WHERE id = ? AND status = 'paid' AND refund_status = 'none'")
+      .bind(refundMatch[1]).run();
+    if (reserved.meta?.changes !== 1) return json({ error: "The refund state changed. Reload the order before retrying." }, 409);
+    let refundResponse;
+    try {
+      refundResponse = await fetch("https://api.stripe.com/v1/refunds", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + env.STRIPE_SECRET_KEY,
+          "content-type": "application/x-www-form-urlencoded",
+          "idempotency-key": refundIdempotencyKey(refundMatch[1])
+        },
+        body: new URLSearchParams({ payment_intent: paymentIntent, "metadata[order_id]": refundMatch[1] })
+      });
+    } catch {
+      return json({ error: "Refund request outcome is unknown. The order is held as pending; reconcile with Stripe before any retry." }, 502);
+    }
+    const refund = await refundResponse.json().catch(() => null);
+    if (!refundResponse.ok || !refund?.id) {
+      if (refundResponse.status >= 400 && refundResponse.status < 500) {
+        await env.DB.prepare("UPDATE orders SET refund_status = 'failed', updated_at = datetime('now') WHERE id = ? AND refund_status = 'pending'").bind(refundMatch[1]).run();
+      }
+      return json({ error: "The payment provider did not confirm the refund. Check Stripe before taking further action." }, 502);
+    }
+    const status = refund.status === "succeeded" ? "succeeded" : refund.status === "failed" || refund.status === "canceled" ? "failed" : "pending";
+    await env.DB.prepare("UPDATE orders SET refund_status = ?, refund_id = ?, refund_amount_cents = ?, updated_at = datetime('now') WHERE id = ? AND refund_status = 'pending'")
+      .bind(status, refund.id, Number.isInteger(refund.amount) ? refund.amount : null, refundMatch[1]).run();
+    return json({ refundStatus: status });
   }
   const shippingMatch = path.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/shipping$/i);
   if (shippingMatch && request.method === "GET") {
@@ -392,4 +454,4 @@ export default {
     }
   }
 };
-export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, safeAddressField, shippingAddressFromSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
+export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, refundIdempotencyKey, refundPaymentIntentFromSession, safeAddressField, shippingAddressFromSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
