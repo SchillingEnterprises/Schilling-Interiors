@@ -214,6 +214,7 @@ async function handleStripeWebhook(request, env) {
   if (!event.id || !event.type || !event.data?.object?.id) return text("Invalid event", 400);
   const session = event.data.object;
   const sessionId = session.id;
+  if (!/^cs_test_[A-Za-z0-9]+$/.test(sessionId)) return text("Only test-mode Stripe Checkout Sessions are accepted", 400);
   const metadataOrderId = session.metadata?.order_id;
   const clientOrderId = session.client_reference_id;
   const orderId = metadataOrderId || clientOrderId;
