@@ -1,0 +1,43 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const workflow = readFileSync(new URL("../../.github/workflows/deploy-storefront.yml", import.meta.url), "utf8");
+const wrangler = JSON.parse(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+
+test("storefront production deployment remains manually triggered only", () => {
+  const triggers = workflow.match(/^on:\\n([\\s\\S]*?)(?=^permissions:)/m)?.[1] ?? "";
+  assert.match(triggers, /^\\s+workflow_dispatch:\\s*$/m);
+  assert.doesNotMatch(triggers, /^\\s+(push|pull_request|schedule):/m);
+});
+
+test("deployment refuses live Stripe API keys", () => {
+  assert.match(workflow, /STRIPE_SECRET_KEY.*?!= sk_test_\\*/s);
+});
+
+test("paid checkout requires all payment and business release gates", () => {
+  for (const key of [
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_SHIPPING_RATE_ID",
+    "TURNSTILE_SECRET_KEY",
+    "TURNSTILE_SITE_KEY"
+  ]) {
+    assert.match(workflow, new RegExp(key));
+  }
+  assert.match(workflow, /STORE_POLICIES_CONFIRMED.*?TAX_CONFIGURATION_CONFIRMED/s);
+});
+
+test("remote database migrations run before Worker deployment", () => {
+  const migrations = workflow.indexOf("Apply D1 migrations");
+  const deploy = workflow.indexOf("Deploy Worker and storefront assets");
+  assert.notEqual(migrations, -1);
+  assert.notEqual(deploy, -1);
+  assert.ok(migrations < deploy);
+});
+
+test("new storefront configuration keeps checkout and confirmations disabled", () => {
+  assert.equal(wrangler.vars.STORE_CHECKOUT_ENABLED, "false");
+  assert.equal(wrangler.vars.STORE_POLICIES_CONFIRMED, "false");
+  assert.equal(wrangler.vars.TAX_CONFIGURATION_CONFIRMED, "false");
+});
