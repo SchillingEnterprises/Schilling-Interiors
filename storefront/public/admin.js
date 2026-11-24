@@ -38,7 +38,23 @@ function renderOrders(orders) {
     node(detail, "small", order.createdAt + " · " + order.items.map((item) => item.quantity + " × " + item.name).join(", "), "order-items");
     node(detail, "small", "Fulfillment: " + (order.fulfillmentStatus || "unfulfilled"));
     if (order.trackingCarrier || order.trackingNumber) node(detail, "small", [order.trackingCarrier, order.trackingNumber].filter(Boolean).join(" · "));
+    if (order.refundStatus && order.refundStatus !== "none") node(detail, "small", "Refund: " + order.refundStatus + (order.refundAmountCents ? " · " + money(order.refundAmountCents) : ""));
     node(row, "code", order.id);
+    if (order.status === "paid" && order.refundStatus === "none") {
+      const refund = node(row, "button", "Issue full test refund", "small-button"); refund.type = "button";
+      refund.addEventListener("click", async () => {
+        if (!window.confirm("Issue a full refund through the Stripe test-mode account for this order?")) return;
+        refund.disabled = true;
+        try {
+          await api("/api/admin/orders/" + order.id + "/refund", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) });
+          await load();
+        } catch (error) {
+          statusNode.textContent = error.message;
+          refund.disabled = false;
+          await load().catch(() => {});
+        }
+      });
+    }
     if (order.status === "paid") {
       const addressButton = node(row, "button", "View shipping address", "small-button"); addressButton.type = "button";
       addressButton.addEventListener("click", async () => {
