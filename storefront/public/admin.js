@@ -39,6 +39,22 @@ function renderOrders(orders) {
     node(detail, "small", "Fulfillment: " + (order.fulfillmentStatus || "unfulfilled"));
     if (order.trackingCarrier || order.trackingNumber) node(detail, "small", [order.trackingCarrier, order.trackingNumber].filter(Boolean).join(" · "));
     node(row, "code", order.id);
+    if (order.status === "paid") {
+      const addressButton = node(row, "button", "View shipping address", "small-button"); addressButton.type = "button";
+      addressButton.addEventListener("click", async () => {
+        addressButton.disabled = true;
+        try {
+          const result = await api("/api/admin/orders/" + order.id + "/shipping");
+          const address = result.shipping;
+          const lines = [address.name, address.line1, address.line2, [address.city, address.state, address.postalCode].filter(Boolean).join(", "), address.country].filter(Boolean);
+          node(detail, "small", "Shipping address: " + lines.join(" · "));
+          addressButton.textContent = "Shipping address loaded";
+        } catch (error) {
+          statusNode.textContent = error.message;
+          addressButton.disabled = false;
+        }
+      });
+    }
     if (order.status === "paid" && order.fulfillmentStatus === "unfulfilled") {
       const start = node(row, "button", "Start processing", "small-button"); start.type = "button";
       start.addEventListener("click", async () => {
