@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { checkoutConfigured, constantTimeEqual, linkStripeSession, refundIdempotencyKey, refundPaymentIntentFromSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
@@ -272,4 +272,22 @@ test("shipping address extraction requires the matching paid test checkout sessi
   assert.equal(shippingAddressFromSession({ ...session, metadata: { order_id: "other" } }, "order-1", "cs_test_shipping123"), null);
   assert.equal(shippingAddressFromSession({ ...session, shipping_details: null }, "order-1", "cs_test_shipping123"), null);
   assert.equal(safeAddressField("x".repeat(250)).length, 200);
+});
+
+
+test("refunds require the matching paid test-mode Checkout Session and payment intent", () => {
+  const session = {
+    id: "cs_test_refund123",
+    mode: "payment",
+    payment_status: "paid",
+    metadata: { order_id: "order-1" },
+    client_reference_id: "order-1",
+    payment_intent: "pi_test123"
+  };
+  assert.equal(refundPaymentIntentFromSession(session, "order-1", "cs_test_refund123"), "pi_test123");
+  assert.equal(refundPaymentIntentFromSession({ ...session, id: "cs_live_refund123" }, "order-1", "cs_live_refund123"), "");
+  assert.equal(refundPaymentIntentFromSession({ ...session, metadata: { order_id: "other" } }, "order-1", "cs_test_refund123"), "");
+  assert.equal(refundPaymentIntentFromSession({ ...session, payment_status: "unpaid" }, "order-1", "cs_test_refund123"), "");
+  assert.equal(refundPaymentIntentFromSession({ ...session, payment_intent: "not-a-payment-intent" }, "order-1", "cs_test_refund123"), "");
+  assert.equal(refundIdempotencyKey("order-1"), "schilling-interiors-refund-order-1");
 });
