@@ -139,6 +139,35 @@ test("Stripe webhook rejects unsigned requests before database access", async ()
 });
 
 
+test("Stripe webhook rejects live-mode sessions before database access", async () => {
+  const secret = "whsec_test_mode";
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const payload = JSON.stringify({
+    id: "evt_live_mode",
+    type: "checkout.session.expired",
+    data: { object: { id: "cs_live_abc123", metadata: { order_id: "order-1" }, client_reference_id: "order-1" } }
+  });
+  const signature = createHmac("sha256", secret).update(timestamp + "." + payload).digest("hex");
+  let databaseTouched = false;
+  const response = await (await import("../src/worker.js")).default.fetch(
+    new Request("https://shop.example.com/api/stripe/webhook", {
+      method: "POST",
+      headers: { "stripe-signature": "t=" + timestamp + ",v1=" + signature },
+      body: payload
+    }),
+    {
+      STRIPE_WEBHOOK_SECRET: secret,
+      DB: {
+        prepare() { databaseTouched = true; throw new Error("Database must not be accessed."); },
+        batch() { databaseTouched = true; throw new Error("Database must not be accessed."); }
+      }
+    }
+  );
+  assert.equal(response.status, 400);
+  assert.equal(await response.text(), "Only test-mode Stripe Checkout Sessions are accepted");
+  assert.equal(databaseTouched, false);
+});
+
 test("inventory reservation batches order creation and every item in one transaction", async () => {
   const batches = [];
   const db = {
