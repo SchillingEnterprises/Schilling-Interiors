@@ -251,6 +251,26 @@ async function handleStripeWebhook(request, env) {
   statements.push(db.prepare("UPDATE stripe_events SET processed_at = datetime('now') WHERE id = ? AND processed_at IS NULL").bind(event.id));
   await db.batch(statements); return text("ok", 200);
 }
+function safeAddressField(value) {
+  return typeof value === "string" ? value.trim().slice(0, 200) : "";
+}
+function shippingAddressFromSession(session, orderId, sessionId) {
+  if (!session || session.id !== sessionId || session.mode !== "payment"
+    || session.metadata?.order_id !== orderId || session.client_reference_id !== orderId) return null;
+  const details = session.shipping_details || session.shipping;
+  const address = details?.address;
+  if (!address || typeof address !== "object") return null;
+  return {
+    name: safeAddressField(details.name),
+    line1: safeAddressField(address.line1),
+    line2: safeAddressField(address.line2),
+    city: safeAddressField(address.city),
+    state: safeAddressField(address.state),
+    postalCode: safeAddressField(address.postal_code),
+    country: safeAddressField(address.country)
+  };
+}
+
 function validateFulfillmentUpdate(input) {
   const fulfillmentStatus = typeof input.fulfillmentStatus === "string" ? input.fulfillmentStatus.trim() : "";
   const trackingCarrier = typeof input.trackingCarrier === "string" ? input.trackingCarrier.trim() : "";
@@ -276,6 +296,27 @@ async function adminRequest(request, env, path) {
   if (request.method === "GET" && path === "/api/admin/orders") {
     const result = await env.DB.prepare("SELECT id, status, fulfillment_status AS fulfillmentStatus, tracking_carrier AS trackingCarrier, tracking_number AS trackingNumber, tracking_url AS trackingUrl, shipped_at AS shippedAt, fulfilled_at AS fulfilledAt, currency, subtotal_cents AS subtotalCents, amount_total_cents AS amountTotalCents, items_json AS itemsJson, created_at AS createdAt FROM orders ORDER BY created_at DESC LIMIT 100").all();
     return json({ orders: (result.results || []).map((order) => ({ ...order, items: JSON.parse(order.itemsJson || "[]") })) });
+  }
+  const shippingMatch = path.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/shipping$/i);
+  if (shippingMatch && request.method === "GET") {
+    const order = await env.DB.prepare("SELECT status, stripe_session_id FROM orders WHERE id = ?").bind(shippingMatch[1]).first();
+    if (!order) return json({ error: "Order not found." }, 404);
+    if (order.status !== "paid") return json({ error: "Shipping details are available only for paid orders." }, 409);
+    if (typeof env.STRIPE_SECRET_KEY !== "string" || !env.STRIPE_SECRET_KEY.startsWith("sk_test_")) return json({ error: "Test-mode payment-provider access is not configured." }, 503);
+    if (!/^cs_test_[A-Za-z0-9]+$/.test(order.stripe_session_id || "")) return json({ error: "A valid test-mode checkout session is not linked to this order." }, 404);
+    let stripeResponse;
+    try {
+      stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions/" + encodeURIComponent(order.stripe_session_id), {
+        headers: { authorization: "Bearer " + env.STRIPE_SECRET_KEY }
+      });
+    } catch {
+      return json({ error: "Shipping details could not be retrieved from the payment provider." }, 502);
+    }
+    if (!stripeResponse.ok) return json({ error: "Shipping details could not be retrieved from the payment provider." }, 502);
+    const session = await stripeResponse.json().catch(() => null);
+    const shipping = shippingAddressFromSession(session, shippingMatch[1], order.stripe_session_id);
+    if (!shipping) return json({ error: "The payment provider has no verified shipping address for this order." }, 404);
+    return json({ shipping });
   }
   const fulfillmentMatch = path.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/fulfillment$/i);
   if (fulfillmentMatch && request.method === "PATCH") {
@@ -351,4 +392,4 @@ export default {
     }
   }
 };
-export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
+export { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, safeAddressField, shippingAddressFromSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
