@@ -38,7 +38,10 @@ async function readJson(request, maxBytes = 16_384) {
   if (Number(request.headers.get("content-length") || 0) > maxBytes) throw new Error("Request body is too large.");
   const raw = await request.text();
   if (encoder.encode(raw).byteLength > maxBytes) throw new Error("Request body is too large.");
-  try { return JSON.parse(raw); } catch { throw new Error("Request body must be valid JSON."); }
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { throw new Error("Request body must be valid JSON."); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Request body must be a JSON object.");
+  return parsed;
 }
 async function requireAdmin(request, env) {
   const expected = env.ADMIN_API_TOKEN;
@@ -306,7 +309,7 @@ export default {
     try { return secure(await route(request, env)); }
     catch (error) {
       const message = error instanceof Error ? error.message : "Unexpected error.";
-      const validation = ["Request body is too large.", "Request body must be valid JSON."].includes(message)
+      const validation = ["Request body is too large.", "Request body must be valid JSON.", "Request body must be a JSON object."].includes(message)
         || message.startsWith("Product ") || message.startsWith("Use a unique") || message.startsWith("Price ") || message.startsWith("Inventory ") || message.startsWith("Choose ") || message.startsWith("A product does not have enough stock.");
       const conflict = message.startsWith("A product does not have enough stock.");
       return json({ error: message }, conflict ? 409 : validation ? 400 : 500);
