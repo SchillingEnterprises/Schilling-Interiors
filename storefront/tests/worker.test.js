@@ -217,3 +217,19 @@ test("inventory reservation propagates transaction aborts without partial compen
   await assert.rejects(() => reserveOrderInventory(db, { sql: "INSERT INTO orders" }, "order-abort", items, products), error);
   assert.equal(batchCalls, 1);
 });
+
+test("admin product API rejects JSON primitives and arrays as invalid bodies", async () => {
+  const token = "x".repeat(40);
+  for (const body of ["null", "[]", "\"not-an-object\""]) {
+    const response = await (await import("../src/worker.js")).default.fetch(
+      new Request("https://shop.example.com/api/admin/products", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + token },
+        body
+      }),
+      { ADMIN_API_TOKEN: token }
+    );
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "Request body must be a JSON object.");
+  }
+});
