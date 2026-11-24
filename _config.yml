@@ -1,0 +1,15 @@
+title: "Schilling Interiors | A Curated Archive"
+description: "An image-led archive of design and lifestyle references."
+url: "https://schillingenterprises.github.io"
+baseurl: "/Schilling-Interiors"
+
+# The legacy branch-based Pages source must publish only the archive.
+# Keep the Worker, admin interface, database migrations, tests, and engineering
+# documentation out of the public Pages artifact.
+exclude:
+  - ".github"
+  - ".gitignore"
+  - "README.md"
+  - "SECURITY.md"
+  - "storefront"
+  - "tests"
