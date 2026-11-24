@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { checkoutConfigured, constantTimeEqual, linkStripeSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
@@ -249,4 +249,27 @@ test("fulfillment updates require safe HTTPS tracking and supported states", () 
   assert.throws(() => validateFulfillmentUpdate({ fulfillmentStatus: "shipped" }), /required before marking/);
   assert.throws(() => validateFulfillmentUpdate({ fulfillmentStatus: "shipped", trackingCarrier: "UPS", trackingNumber: "1Z123", trackingUrl: "http://unsafe.example/track" }), /HTTPS/);
   assert.throws(() => validateFulfillmentUpdate({ fulfillmentStatus: "refunded" }), /valid fulfillment status/);
+});
+
+
+test("shipping address extraction requires the matching paid test checkout session", () => {
+  const session = {
+    id: "cs_test_shipping123",
+    mode: "payment",
+    metadata: { order_id: "order-1" },
+    client_reference_id: "order-1",
+    shipping_details: {
+      name: "Test Customer",
+      address: { line1: "123 Test Street", line2: "Suite 4", city: "Louisville", state: "KY", postal_code: "40202", country: "US" }
+    },
+    customer_details: { email: "must-not-be-returned@example.test" }
+  };
+  assert.deepEqual(shippingAddressFromSession(session, "order-1", "cs_test_shipping123"), {
+    name: "Test Customer", line1: "123 Test Street", line2: "Suite 4", city: "Louisville",
+    state: "KY", postalCode: "40202", country: "US"
+  });
+  assert.equal(shippingAddressFromSession({ ...session, id: "cs_test_other" }, "order-1", "cs_test_shipping123"), null);
+  assert.equal(shippingAddressFromSession({ ...session, metadata: { order_id: "other" } }, "order-1", "cs_test_shipping123"), null);
+  assert.equal(shippingAddressFromSession({ ...session, shipping_details: null }, "order-1", "cs_test_shipping123"), null);
+  assert.equal(safeAddressField("x".repeat(250)).length, 200);
 });
