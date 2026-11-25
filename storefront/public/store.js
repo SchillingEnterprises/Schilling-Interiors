@@ -7,7 +7,7 @@ const subtotalNode = document.getElementById("cart-subtotal");
 const checkoutForm = document.getElementById("checkout-form");
 const checkoutButton = document.getElementById("checkout-button");
 const checkoutMessage = document.getElementById("checkout-message");
-let products = []; let config = { checkoutEnabled: false, turnstileSiteKey: "" }; let captchaToken = ""; let widgetId = null;
+let products = []; let config = { checkoutEnabled: false, catalogEnabled: false, turnstileSiteKey: "" }; let captchaToken = ""; let widgetId = null;
 let cart = loadCart();
 function loadCart() {
   try { const value = JSON.parse(localStorage.getItem("schilling-store-cart") || "[]"); return Array.isArray(value) ? value.filter((item) => typeof item.id === "string" && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 10) : []; }
@@ -61,9 +61,14 @@ async function initialize() {
   try {
     const responses = await Promise.all([fetch("/api/config"), fetch("/api/products")]);
     if (responses.some((response) => !response.ok)) throw new Error("The store service is not connected yet.");
-    config = await responses[0].json(); const data = await responses[1].json(); products = Array.isArray(data.products) ? data.products : [];
-    catalogStatus.textContent = products.length + " products available"; renderProducts(); renderCart();
-    if (!config.checkoutEnabled) checkoutMessage.textContent = "Checkout is not activated yet. The catalogue is available for browsing.";
+    config = await responses[0].json(); const data = await responses[1].json();
+    const catalogEnabled = config.catalogEnabled === true && data.catalogEnabled !== false;
+    products = catalogEnabled && Array.isArray(data.products) ? data.products : [];
+    if (catalogEnabled) catalogStatus.textContent = products.length + " products available";
+    else { catalogStatus.textContent = "Catalogue not approved for publication"; emptyCatalog.textContent = "The Schilling Interiors catalogue is being prepared and is not yet available for public browsing."; }
+    renderProducts(); renderCart();
+    if (!catalogEnabled) checkoutMessage.textContent = "The catalogue and checkout remain unpublished until the owner confirms the complete store release gate.";
+    else if (!config.checkoutEnabled) checkoutMessage.textContent = "Checkout is not activated yet. The catalogue is available for browsing.";
     else if (!config.turnstileSiteKey) checkoutMessage.textContent = "The anti-bot service is not configured.";
     if (config.checkoutEnabled && config.turnstileSiteKey && window.turnstile) {
       widgetId = window.turnstile.render("#turnstile-widget", { sitekey: config.turnstileSiteKey, callback: (value) => { captchaToken = value; renderCart(); }, "expired-callback": () => { captchaToken = ""; renderCart(); }, "error-callback": () => { captchaToken = ""; renderCart(); } });
