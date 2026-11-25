@@ -38,7 +38,7 @@ The example secrets are intentionally invalid. Use Stripe test credentials, a te
 
 The manual `Deploy storefront` workflow deploys the Worker and static assets. It applies D1 migrations first. It requires these GitHub repository secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_DATABASE_ID`, and `ADMIN_API_TOKEN`.
 
-Set these repository variables: `PUBLIC_STORE_URL` (the final HTTPS storefront URL), `STORE_CHECKOUT_ENABLED=false`, `STORE_POLICIES_CONFIRMED=false`, `TAX_CONFIGURATION_CONFIRMED=false`, `TURNSTILE_SITE_KEY`, `SHIPPING_ALLOWED_COUNTRIES` (ISO country codes; default US), and `STRIPE_AUTOMATIC_TAX` (keep false until correctly configured).
+Set these repository variables: `PUBLIC_STORE_URL` (the final HTTPS storefront URL), `STORE_CHECKOUT_ENABLED=false`, `STORE_RELEASE_APPROVED=false`, `STORE_POLICIES_CONFIRMED=false`, `TAX_CONFIGURATION_CONFIRMED=false`, `TURNSTILE_SITE_KEY`, `SHIPPING_ALLOWED_COUNTRIES` (ISO country codes; default US), and `STRIPE_AUTOMATIC_TAX` (keep false until correctly configured). The `storefront-production` GitHub environment must also have `STORE_DEPLOYMENT_APPROVED=false` until an owner explicitly authorizes a production deployment.
 
 To enable paid checkout, also add secrets `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_SHIPPING_RATE_ID`, and `TURNSTILE_SECRET_KEY`. Configure a Stripe webhook at `https://YOUR_STORE_HOST/api/stripe/webhook` for `checkout.session.completed`, `checkout.session.expired`, and `checkout.session.async_payment_failed`. Create a Stripe shipping rate that reflects real delivery costs. Update the public Turnstile domain/site settings. Then replace the policy placeholders in `public/policies.html`, publish the seller's contact details and final business policies, confirm tax obligations and the payment provider's tax settings, and only then set all three confirmation/enable flags to true.
 
@@ -57,3 +57,12 @@ The refund migration stores nullable provider IDs with a separate partial unique
 ### Customer order tracking
 
 The post-checkout confirmation page accepts only test-mode Checkout Session IDs and displays payment and fulfillment status. Once an authenticated administrator marks an order shipped with a carrier, tracking number, and HTTPS tracking URL, the customer confirmation page can display a direct carrier-tracking link. The public status response intentionally contains no customer email, shipping address, order line items, or payment details; the Checkout Session ID acts as the unguessable lookup reference.
+
+
+## Publication and deployment approval gates
+
+The Worker fails closed while `STORE_RELEASE_APPROVED` is not exactly `true`. Until that owner-controlled release marker is enabled, the public catalogue API returns no products, protected administration rejects attempts to publish active products (draft product preparation remains available), and paid checkout stays disabled. The public storefront explains that the catalogue is not yet approved for publication.
+
+Set `STORE_RELEASE_APPROVED=true` only after the responsible owner has explicitly confirmed the approved catalogue and images, production deployment secrets, tax and shipping configuration, returns/refund/privacy/terms policies, fulfillment and support process, backup/restore readiness, and successful end-to-end acceptance using Stripe test mode. The marker is a manual release gate; CI does not set it.
+
+The manual production deployment workflow separately requires `STORE_DEPLOYMENT_APPROVED=true` in the `storefront-production` GitHub environment as well as `STORE_RELEASE_APPROVED=true` before it applies remote D1 migrations or deploys the Worker. Leave both false until the approvals are complete. The workflow still rejects live Stripe keys, and no production deployment or live payment action is performed by routine repository maintenance.
