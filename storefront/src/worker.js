@@ -16,8 +16,14 @@ function safeStoreUrl(value) {
   try { const url = new URL(value); return url.protocol === "https:" || url.hostname === "localhost"; }
   catch { return false; }
 }
+function catalogPublishingEnabled(env) {
+  return env.STORE_RELEASE_APPROVED === "true"
+    && env.STORE_POLICIES_CONFIRMED === "true"
+    && env.TAX_CONFIGURATION_CONFIRMED === "true";
+}
 function checkoutConfigured(env) {
   return env.STORE_CHECKOUT_ENABLED === "true"
+    && catalogPublishingEnabled(env)
     && typeof env.STRIPE_SECRET_KEY === "string"
     && env.STRIPE_SECRET_KEY.startsWith("sk_test_")
     && Boolean(env.STRIPE_WEBHOOK_SECRET)
@@ -317,7 +323,8 @@ async function adminRequest(request, env, path) {
   if (!await requireAdmin(request, env)) return json({ error: "Unauthorized." }, 401);
   if (request.method === "GET" && path === "/api/admin/products") {
     const result = await env.DB.prepare("SELECT id, slug, name, description, collection, image_url AS imageUrl, price_cents AS priceCents, inventory_quantity AS inventoryQuantity, shipping_required AS shippingRequired, active FROM products ORDER BY created_at DESC LIMIT 250").all();
-    return json({ products: result.results || [] });
+    const canPublish = catalogPublishingEnabled(env);
+    return json({ products: (result.results || []).map((product) => ({ ...product, active: canPublish && Boolean(product.active) })), catalogPublishingEnabled: canPublish });
   }
   if (request.method === "GET" && path === "/api/admin/orders") {
     const result = await env.DB.prepare("SELECT id, status, fulfillment_status AS fulfillmentStatus, tracking_carrier AS trackingCarrier, tracking_number AS trackingNumber, tracking_url AS trackingUrl, shipped_at AS shippedAt, fulfilled_at AS fulfilledAt, refund_status AS refundStatus, refund_id AS refundId, refund_amount_cents AS refundAmountCents, currency, subtotal_cents AS subtotalCents, amount_total_cents AS amountTotalCents, items_json AS itemsJson, created_at AS createdAt FROM orders ORDER BY created_at DESC LIMIT 100").all();
@@ -415,7 +422,9 @@ async function adminRequest(request, env, path) {
     return json({ saved: true, fulfillmentStatus: update.fulfillmentStatus });
   }
   if (request.method === "POST" && path === "/api/admin/products") {
-    const product = validateProduct(await readJson(request)); const id = crypto.randomUUID();
+    const product = validateProduct(await readJson(request));
+    if (product.active && !catalogPublishingEnabled(env)) return json({ error: "Product publishing is locked until the owner confirms the complete store release gate." }, 503);
+    const id = crypto.randomUUID();
     try {
       await env.DB.prepare("INSERT INTO products (id, slug, name, description, collection, image_url, price_cents, inventory_quantity, shipping_required, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, product.slug, product.name, product.description, product.collection, product.imageUrl, product.priceCents, product.inventoryQuantity, product.shippingRequired ? 1 : 0, product.active ? 1 : 0).run();
     } catch (error) {
@@ -427,6 +436,7 @@ async function adminRequest(request, env, path) {
   const match = path.match(/^\/api\/admin\/products\/([0-9a-f-]{36})$/i);
   if (match && request.method === "PUT") {
     const product = validateProduct(await readJson(request));
+    if (product.active && !catalogPublishingEnabled(env)) return json({ error: "Product publishing is locked until the owner confirms the complete store release gate." }, 503);
     const result = await env.DB.prepare("UPDATE products SET slug = ?, name = ?, description = ?, collection = ?, image_url = ?, price_cents = ?, inventory_quantity = ?, shipping_required = ?, active = ?, updated_at = datetime('now') WHERE id = ?").bind(product.slug, product.name, product.description, product.collection, product.imageUrl, product.priceCents, product.inventoryQuantity, product.shippingRequired ? 1 : 0, product.active ? 1 : 0, match[1]).run();
     if (result.meta?.changes !== 1) return json({ error: "Product not found." }, 404);
     return json({ saved: true });
@@ -440,10 +450,11 @@ async function adminRequest(request, env, path) {
 }
 async function route(request, env) {
   const url = new URL(request.url);
-  if (url.pathname === "/api/config" && request.method === "GET") return json({ checkoutEnabled: checkoutConfigured(env), turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
+  if (url.pathname === "/api/config" && request.method === "GET") return json({ checkoutEnabled: checkoutConfigured(env), catalogEnabled: catalogPublishingEnabled(env), turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
   if (url.pathname === "/api/products" && request.method === "GET") {
+    if (!catalogPublishingEnabled(env)) return json({ products: [], catalogEnabled: false });
     const result = await env.DB.prepare("SELECT id, slug, name, description, collection, image_url AS imageUrl, price_cents AS priceCents, inventory_quantity AS inventoryQuantity FROM products WHERE active = 1 ORDER BY created_at DESC LIMIT 100").all();
-    return json({ products: result.results || [] });
+    return json({ products: result.results || [], catalogEnabled: true });
   }
   if (url.pathname === "/api/checkout" && request.method === "POST") return handleCheckout(request, env);
   if (url.pathname === "/api/stripe/webhook" && request.method === "POST") return handleStripeWebhook(request, env);
@@ -469,4 +480,4 @@ export default {
     }
   }
 };
-export { checkoutConfigured, constantTimeEqual, linkStripeSession, publicOrderStatus, reserveOrderInventory, validPaidCheckoutSession, refundIdempotencyKey, refundPaymentIntentFromSession, safeAddressField, shippingAddressFromSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
+export { catalogPublishingEnabled, checkoutConfigured, constantTimeEqual, linkStripeSession, publicOrderStatus, reserveOrderInventory, validPaidCheckoutSession, refundIdempotencyKey, refundPaymentIntentFromSession, safeAddressField, shippingAddressFromSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature };
