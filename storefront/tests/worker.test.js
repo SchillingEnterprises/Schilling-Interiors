@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkoutConfigured, constantTimeEqual, linkStripeSession, publicOrderStatus, refundIdempotencyKey, refundPaymentIntentFromSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
+import { catalogPublishingEnabled, checkoutConfigured, constantTimeEqual, linkStripeSession, publicOrderStatus, refundIdempotencyKey, refundPaymentIntentFromSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
 test("admin token comparison checks full strings and rejects mismatches", () => {
@@ -22,9 +22,12 @@ test("store checkout stays disabled until all operational gates are confirmed", 
   const base = {
     STORE_CHECKOUT_ENABLED: "true", STRIPE_SECRET_KEY: "sk_test_key", STRIPE_WEBHOOK_SECRET: "whsec_key",
     TURNSTILE_SECRET_KEY: "captcha-secret", TURNSTILE_SITE_KEY: "site-key", ADMIN_API_TOKEN: "x".repeat(40),
-    PUBLIC_STORE_URL: "https://shop.example.com", STORE_POLICIES_CONFIRMED: "true", TAX_CONFIGURATION_CONFIRMED: "true"
+    PUBLIC_STORE_URL: "https://shop.example.com", STORE_RELEASE_APPROVED: "true", STORE_POLICIES_CONFIRMED: "true", TAX_CONFIGURATION_CONFIRMED: "true"
   };
+  assert.equal(catalogPublishingEnabled(base), true);
   assert.equal(checkoutConfigured(base), true);
+  assert.equal(catalogPublishingEnabled({ ...base, STORE_RELEASE_APPROVED: "false" }), false);
+  assert.equal(checkoutConfigured({ ...base, STORE_RELEASE_APPROVED: "false" }), false);
   assert.equal(checkoutConfigured({ ...base, STORE_CHECKOUT_ENABLED: "false" }), false);
   assert.equal(checkoutConfigured({ ...base, STORE_POLICIES_CONFIRMED: "false" }), false);
   assert.equal(checkoutConfigured({ ...base, ADMIN_API_TOKEN: "short" }), false);
@@ -310,4 +313,46 @@ test("public order status exposes only fulfillment and verified HTTPS tracking d
   });
   assert.equal(publicOrderStatus({ status: "paid", fulfillmentStatus: "shipped", trackingCarrier: "UPS", trackingNumber: "1Z", trackingUrl: "javascript:alert(1)" }).tracking, null);
   assert.equal(publicOrderStatus({ status: "paid", fulfillmentStatus: "processing", trackingCarrier: "UPS", trackingNumber: "1Z", trackingUrl: "https://example.test" }).tracking, null);
+});
+
+
+test("public catalogue and product publishing stay locked until owner release approval", async () => {
+  const worker = (await import("../src/worker.js")).default;
+  const token = "x".repeat(40);
+  let reads = 0;
+  let writes = 0;
+  const db = {
+    prepare() {
+      return {
+        all: async () => {
+          reads += 1;
+          return { results: [{ id: "product-1", slug: "sample-bowl", name: "Sample bowl", description: "Synthetic test product.", collection: "objects", imageUrl: "https://images.example.test/bowl.jpg", priceCents: 2500, inventoryQuantity: 2 }] };
+        },
+        run: async () => { writes += 1; return { meta: { changes: 1 } }; }
+      };
+    }
+  };
+  const hidden = await worker.fetch(new Request("https://shop.example.com/api/products"), { DB: db });
+  assert.equal(hidden.status, 200);
+  assert.deepEqual(await hidden.json(), { products: [], catalogEnabled: false });
+  assert.equal(reads, 0);
+
+  const product = { name: "Sample bowl", slug: "sample-bowl", description: "Synthetic test product.", collection: "objects", imageUrl: "https://images.example.test/bowl.jpg", priceCents: 2500, inventoryQuantity: 2, shippingRequired: true, active: true };
+  const blocked = await worker.fetch(new Request("https://shop.example.com/api/admin/products", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer " + token },
+    body: JSON.stringify(product)
+  }), { ADMIN_API_TOKEN: token, DB: db });
+  assert.equal(blocked.status, 503);
+  assert.match((await blocked.json()).error, /release gate/);
+  assert.equal(writes, 0);
+
+  const approved = await worker.fetch(new Request("https://shop.example.com/api/products"), {
+    DB: db, STORE_RELEASE_APPROVED: "true", STORE_POLICIES_CONFIRMED: "true", TAX_CONFIGURATION_CONFIRMED: "true"
+  });
+  assert.equal(approved.status, 200);
+  const body = await approved.json();
+  assert.equal(body.catalogEnabled, true);
+  assert.equal(body.products.length, 1);
+  assert.equal(reads, 1);
 });

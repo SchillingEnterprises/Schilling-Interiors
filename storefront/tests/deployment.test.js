@@ -41,3 +41,11 @@ test("new storefront configuration keeps checkout and confirmations disabled", (
   assert.equal(wrangler.vars.STORE_POLICIES_CONFIRMED, "false");
   assert.equal(wrangler.vars.TAX_CONFIGURATION_CONFIRMED, "false");
 });
+
+
+test("production deployment requires explicit deployment and store release approvals", () => {
+  assert.match(workflow, /STORE_DEPLOYMENT_APPROVED/);
+  assert.match(workflow, /STORE_RELEASE_APPROVED/);
+  assert.match(workflow, /STORE_DEPLOYMENT_APPROVED.*?!= "true".*?STORE_RELEASE_APPROVED.*?!= "true"/s);
+  assert.equal(wrangler.vars.STORE_RELEASE_APPROVED, "false");
+});
