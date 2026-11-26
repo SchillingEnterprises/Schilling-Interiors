@@ -10,8 +10,8 @@ if (!sessionId || !/^cs_test_[A-Za-z0-9]+$/.test(sessionId)) {
       if (!response.ok) throw new Error(data.error || "Unable to look up this order.");
       statusNode.textContent = data.status === "paid"
         ? "Payment confirmed. Thank you for your order."
-        : data.status === "canceled"
-          ? "This checkout was canceled. No payment was confirmed."
+        : ["failed", "expired", "canceled"].includes(data.status)
+          ? "Checkout ended without payment. No payment was confirmed. You can return to the shop and try again."
           : "Payment is still being confirmed. Your Stripe receipt is the source of truth.";
       if (data.tracking) {
         trackingNode.textContent = "Fulfillment: " + data.fulfillmentStatus + " · " + data.tracking.carrier + " · " + data.tracking.number + " ";
