@@ -287,7 +287,8 @@ function safeAddressField(value) {
   return typeof value === "string" ? value.trim().slice(0, 200) : "";
 }
 function shippingAddressFromSession(session, orderId, sessionId) {
-  if (!session || session.id !== sessionId || session.mode !== "payment"
+  if (!session || session.id !== sessionId || !/^cs_test_[A-Za-z0-9]+$/.test(session.id)
+    || session.mode !== "payment" || session.payment_status !== "paid"
     || session.metadata?.order_id !== orderId || session.client_reference_id !== orderId) return null;
   const details = session.shipping_details || session.shipping;
   const address = details?.address;

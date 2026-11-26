@@ -259,6 +259,7 @@ test("shipping address extraction requires the matching paid test checkout sessi
   const session = {
     id: "cs_test_shipping123",
     mode: "payment",
+    payment_status: "paid",
     metadata: { order_id: "order-1" },
     client_reference_id: "order-1",
     shipping_details: {
@@ -272,6 +273,9 @@ test("shipping address extraction requires the matching paid test checkout sessi
     state: "KY", postalCode: "40202", country: "US"
   });
   assert.equal(shippingAddressFromSession({ ...session, id: "cs_test_other" }, "order-1", "cs_test_shipping123"), null);
+  assert.equal(shippingAddressFromSession({ ...session, id: "cs_live_shipping123" }, "order-1", "cs_live_shipping123"), null);
+  assert.equal(shippingAddressFromSession({ ...session, payment_status: "unpaid" }, "order-1", "cs_test_shipping123"), null);
+  assert.equal(shippingAddressFromSession({ ...session, mode: "subscription" }, "order-1", "cs_test_shipping123"), null);
   assert.equal(shippingAddressFromSession({ ...session, metadata: { order_id: "other" } }, "order-1", "cs_test_shipping123"), null);
   assert.equal(shippingAddressFromSession({ ...session, shipping_details: null }, "order-1", "cs_test_shipping123"), null);
   assert.equal(safeAddressField("x".repeat(250)).length, 200);
