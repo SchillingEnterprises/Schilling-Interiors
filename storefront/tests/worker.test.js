@@ -315,6 +315,12 @@ test("public order status exposes only fulfillment and verified HTTPS tracking d
   assert.equal(publicOrderStatus({ status: "paid", fulfillmentStatus: "processing", trackingCarrier: "UPS", trackingNumber: "1Z", trackingUrl: "https://example.test" }).tracking, null);
 });
 
+test("public order status reports failed and expired checkouts instead of implying payment is pending", () => {
+  assert.equal(publicOrderStatus({ status: "failed" }).status, "failed");
+  assert.equal(publicOrderStatus({ status: "expired" }).status, "expired");
+  assert.equal(publicOrderStatus({ status: "unknown" }).status, "pending");
+});
+
 
 test("public catalogue and product publishing stay locked until owner release approval", async () => {
   const worker = (await import("../src/worker.js")).default;
