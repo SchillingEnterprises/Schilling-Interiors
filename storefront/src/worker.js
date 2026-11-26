@@ -258,7 +258,7 @@ async function handleStripeWebhook(request, env) {
   await db.batch(statements); return text("ok", 200);
 }
 function publicOrderStatus(order) {
-  const status = ["pending", "paid", "canceled"].includes(order?.status) ? order.status : "pending";
+  const status = ["pending", "paid", "failed", "expired"].includes(order?.status) ? order.status : "pending";
   const fulfillmentStatus = ["unfulfilled", "processing", "shipped", "fulfilled"].includes(order?.fulfillmentStatus)
     ? order.fulfillmentStatus : "unfulfilled";
   let tracking = null;
