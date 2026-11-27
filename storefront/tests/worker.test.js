@@ -326,6 +326,32 @@ test("public order status reports failed and expired checkouts instead of implyi
 });
 
 
+test("unexpected worker failures return a generic error without exposing internal details", async () => {
+  const worker = (await import("../src/worker.js")).default;
+  const sensitiveMarker = "SQLITE_ERROR: private_table_schema_and_connection_details";
+  const db = {
+    prepare() {
+      throw new Error(sensitiveMarker);
+    }
+  };
+
+  const response = await worker.fetch(
+    new Request("https://shop.example.com/api/products"),
+    {
+      DB: db,
+      STORE_RELEASE_APPROVED: "true",
+      STORE_POLICIES_CONFIRMED: "true",
+      TAX_CONFIGURATION_CONFIRMED: "true"
+    }
+  );
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    error: "An unexpected server error occurred. Please try again."
+  });
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});
+
 test("public catalogue and product publishing stay locked until owner release approval", async () => {
   const worker = (await import("../src/worker.js")).default;
   const token = "x".repeat(40);
