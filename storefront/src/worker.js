@@ -473,11 +473,15 @@ export default {
   async fetch(request, env) {
     try { return secure(await route(request, env)); }
     catch (error) {
-      const message = error instanceof Error ? error.message : "Unexpected error.";
+      const message = error instanceof Error ? error.message : "";
       const validation = ["Request body is too large.", "Request body must be valid JSON.", "Request body must be a JSON object."].includes(message)
         || message.startsWith("Product ") || message.startsWith("Use a unique") || message.startsWith("Price ") || message.startsWith("Inventory ") || message.startsWith("Choose ") || message.startsWith("Tracking ") || message.startsWith("Carrier, tracking") || message.startsWith("A product does not have enough stock.");
       const conflict = message.startsWith("A product does not have enough stock.");
-      return json({ error: message }, conflict ? 409 : validation ? 400 : 500);
+      if (validation) return json({ error: message }, conflict ? 409 : 400);
+
+      // Database/provider exceptions can contain schema, request, or infrastructure
+      // details. Keep those details server-side and expose only a generic failure.
+      return json({ error: "An unexpected server error occurred. Please try again." }, 500);
     }
   }
 };
