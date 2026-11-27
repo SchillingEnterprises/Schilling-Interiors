@@ -368,7 +368,7 @@ test("Stripe webhook replay does not pay an order or release inventory twice", a
             results.push({ meta: { changes: 0 } });
           }
         } else if (statement.sql.startsWith("UPDATE order_items SET inventory_reserved = 0")) {
-          const stripeEvent = state.events.get(second);
+          const stripeEvent = state.events.get(third);
           if (stripeEvent && !stripeEvent.processed && state.order.status === "paid" && state.inventoryReserved) {
             state.inventoryReserved = false;
             state.inventoryReleases += 1;
