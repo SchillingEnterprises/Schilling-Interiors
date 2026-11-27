@@ -291,6 +291,140 @@ test("Stripe webhook rejects live-mode sessions before database access", async (
   assert.equal(databaseTouched, false);
 });
 
+test("Stripe webhook replay does not pay an order or release inventory twice", async () => {
+  const secret = "whsec_replay_regression_test";
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const event = {
+    id: "evt_replay_regression",
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: "cs_test_replay123",
+        mode: "payment",
+        payment_status: "paid",
+        currency: "usd",
+        amount_subtotal: 5000,
+        amount_total: 5500,
+        metadata: { order_id: "order-replay-1" },
+        client_reference_id: "order-replay-1"
+      }
+    }
+  };
+  const payload = JSON.stringify(event);
+  const signature = createHmac("sha256", secret).update(timestamp + "." + payload).digest("hex");
+  const state = {
+    order: {
+      id: "order-replay-1",
+      stripe_session_id: "cs_test_replay123",
+      subtotal_cents: 5000,
+      currency: "usd",
+      status: "pending"
+    },
+    inventoryReserved: true,
+    events: new Map(),
+    paidTransitions: 0,
+    inventoryReleases: 0
+  };
+
+  const db = {
+    prepare(sql) {
+      return {
+        sql,
+        bind(...args) {
+          return {
+            sql,
+            args,
+            first: async () => state.order
+          };
+        }
+      };
+    },
+    async batch(statements) {
+      const results = [];
+      for (const statement of statements) {
+        const [first, second, third, fourth, fifth, sixth] = statement.args;
+        if (statement.sql.startsWith("INSERT OR IGNORE INTO stripe_events")) {
+          if (state.events.has(first)) {
+            results.push({ meta: { changes: 0 } });
+          } else {
+            state.events.set(first, { type: second, processed: false });
+            results.push({ meta: { changes: 1 } });
+          }
+        } else if (statement.sql.startsWith("UPDATE orders SET status = 'paid'")) {
+          const stripeEvent = state.events.get(sixth);
+          const eligible = stripeEvent
+            && !stripeEvent.processed
+            && state.order.id === second
+            && state.order.currency === third
+            && state.order.subtotal_cents === fourth
+            && state.order.stripe_session_id === fifth
+            && state.order.status === "pending";
+          if (eligible) {
+            state.order.status = "paid";
+            state.order.amount_total_cents = first;
+            state.paidTransitions += 1;
+            results.push({ meta: { changes: 1 } });
+          } else {
+            results.push({ meta: { changes: 0 } });
+          }
+        } else if (statement.sql.startsWith("UPDATE order_items SET inventory_reserved = 0")) {
+          const stripeEvent = state.events.get(third);
+          if (stripeEvent && !stripeEvent.processed && state.order.status === "paid" && state.inventoryReserved) {
+            state.inventoryReserved = false;
+            state.inventoryReleases += 1;
+            results.push({ meta: { changes: 1 } });
+          } else {
+            results.push({ meta: { changes: 0 } });
+          }
+        } else if (statement.sql.startsWith("UPDATE stripe_events SET processed_at")) {
+          const stripeEvent = state.events.get(first);
+          if (stripeEvent && !stripeEvent.processed) {
+            stripeEvent.processed = true;
+            results.push({ meta: { changes: 1 } });
+          } else {
+            results.push({ meta: { changes: 0 } });
+          }
+        } else {
+          throw new Error("Unexpected SQL statement in webhook replay test: " + statement.sql);
+        }
+      }
+      return results;
+    }
+  };
+
+  const worker = (await import("../src/worker.js")).default;
+  async function sendEvent() {
+    return worker.fetch(
+      new Request("https://shop.example.com/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": "t=" + timestamp + ",v1=" + signature },
+        body: payload
+      }),
+      { STRIPE_WEBHOOK_SECRET: secret, DB: db }
+    );
+  }
+
+  const first = await sendEvent();
+  assert.equal(first.status, 200);
+  assert.equal(await first.text(), "ok");
+  assert.equal(state.order.status, "paid");
+  assert.equal(state.order.amount_total_cents, 5500);
+  assert.equal(state.inventoryReserved, false);
+  assert.equal(state.paidTransitions, 1);
+  assert.equal(state.inventoryReleases, 1);
+  assert.equal(state.events.size, 1);
+  assert.equal(state.events.get(event.id).processed, true);
+
+  const replay = await sendEvent();
+  assert.equal(replay.status, 200);
+  assert.equal(await replay.text(), "ok");
+  assert.equal(state.order.status, "paid");
+  assert.equal(state.paidTransitions, 1);
+  assert.equal(state.inventoryReleases, 1);
+  assert.equal(state.events.size, 1);
+  assert.equal(state.events.get(event.id).processed, true);
+});
+
 test("inventory reservation batches order creation and every item in one transaction", async () => {
   const batches = [];
   const db = {
