@@ -49,3 +49,28 @@ test("production deployment requires explicit deployment and store release appro
   assert.match(workflow, /STORE_DEPLOYMENT_APPROVED.*?!= "true".*?STORE_RELEASE_APPROVED.*?!= "true"/s);
   assert.equal(wrangler.vars.STORE_RELEASE_APPROVED, "false");
 });
+
+test("production deployment requires every business and operational release gate before remote migrations", () => {
+  const requiredGates = [
+    "STORE_POLICIES_CONFIRMED",
+    "TAX_CONFIGURATION_CONFIRMED",
+    "STORE_RETURNS_PRIVACY_POLICIES_CONFIRMED",
+    "STORE_SHIPPING_FULFILLMENT_CONFIRMED",
+    "STORE_BACKUP_RESTORE_VERIFIED",
+    "STORE_END_TO_END_ACCEPTANCE_CONFIRMED"
+  ];
+  for (const key of requiredGates) {
+    assert.match(workflow, new RegExp(key));
+  }
+  const gateLoop = workflow.indexOf('for key in "${release_gates[@]}"; do');
+  const migrations = workflow.indexOf("Apply D1 migrations");
+  assert.notEqual(gateLoop, -1);
+  assert.ok(gateLoop < migrations, "All owner confirmations must be checked before remote D1 migrations");
+});
+
+test("production deployment requires explicit shipping scope and Stripe test credentials", () => {
+  assert.match(workflow, /required=\([^\n]*SHIPPING_ALLOWED_COUNTRIES[^\n]*STRIPE_SECRET_KEY[^\n]*STRIPE_WEBHOOK_SECRET[^\n]*STRIPE_SHIPPING_RATE_ID[^\n]*TURNSTILE_SECRET_KEY[^\n]*TURNSTILE_SITE_KEY/);
+  assert.match(workflow, /if \[\[ "\$STRIPE_SECRET_KEY" != sk_test_\* \]\]/);
+  assert.match(workflow, /config\.vars\.SHIPPING_ALLOWED_COUNTRIES = process\.env\.SHIPPING_ALLOWED_COUNTRIES;/);
+  assert.doesNotMatch(workflow, /SHIPPING_ALLOWED_COUNTRIES = process\.env\.SHIPPING_ALLOWED_COUNTRIES \|\| "US"/);
+});

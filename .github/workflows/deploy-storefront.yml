@@ -33,6 +33,10 @@ jobs:
           PUBLIC_STORE_URL: ${{ vars.PUBLIC_STORE_URL }}
           TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
           SHIPPING_ALLOWED_COUNTRIES: ${{ vars.SHIPPING_ALLOWED_COUNTRIES }}
+          STORE_SHIPPING_FULFILLMENT_CONFIRMED: ${{ vars.STORE_SHIPPING_FULFILLMENT_CONFIRMED }}
+          STORE_RETURNS_PRIVACY_POLICIES_CONFIRMED: ${{ vars.STORE_RETURNS_PRIVACY_POLICIES_CONFIRMED }}
+          STORE_BACKUP_RESTORE_VERIFIED: ${{ vars.STORE_BACKUP_RESTORE_VERIFIED }}
+          STORE_END_TO_END_ACCEPTANCE_CONFIRMED: ${{ vars.STORE_END_TO_END_ACCEPTANCE_CONFIRMED }}
           STORE_CHECKOUT_ENABLED: ${{ vars.STORE_CHECKOUT_ENABLED }}
           STORE_DEPLOYMENT_APPROVED: ${{ vars.STORE_DEPLOYMENT_APPROVED }}
           STORE_RELEASE_APPROVED: ${{ vars.STORE_RELEASE_APPROVED }}
@@ -41,7 +45,7 @@ jobs:
           STRIPE_AUTOMATIC_TAX: ${{ vars.STRIPE_AUTOMATIC_TAX }}
         run: |
           set -euo pipefail
-          required=(CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_D1_DATABASE_ID ADMIN_API_TOKEN PUBLIC_STORE_URL)
+          required=(CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_D1_DATABASE_ID ADMIN_API_TOKEN PUBLIC_STORE_URL SHIPPING_ALLOWED_COUNTRIES STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_SHIPPING_RATE_ID TURNSTILE_SECRET_KEY TURNSTILE_SITE_KEY)
           for key in "${required[@]}"; do
             if [[ -z "${!key:-}" ]]; then echo "Missing required GitHub secret/variable: $key" >&2; exit 1; fi
           done
@@ -49,10 +53,17 @@ jobs:
             echo "Production deployment is blocked until the owner explicitly approves the complete store release and deployment gates." >&2
             exit 1
           fi
+          release_gates=(STORE_POLICIES_CONFIRMED TAX_CONFIGURATION_CONFIRMED STORE_RETURNS_PRIVACY_POLICIES_CONFIRMED STORE_SHIPPING_FULFILLMENT_CONFIRMED STORE_BACKUP_RESTORE_VERIFIED STORE_END_TO_END_ACCEPTANCE_CONFIRMED)
+          for key in "${release_gates[@]}"; do
+            if [[ "${!key:-}" != "true" ]]; then
+              echo "Production deployment is blocked until the owner explicitly confirms $key." >&2
+              exit 1
+            fi
+          done
           if [[ "${#ADMIN_API_TOKEN}" -lt 32 ]]; then echo "ADMIN_API_TOKEN must be at least 32 characters." >&2; exit 1; fi
           if [[ "$PUBLIC_STORE_URL" != https://* ]]; then echo "PUBLIC_STORE_URL must be the final HTTPS storefront URL." >&2; exit 1; fi
-          if [[ -n "${STRIPE_SECRET_KEY:-}" && "$STRIPE_SECRET_KEY" != sk_test_* ]]; then
-            echo "Only Stripe test-mode secret keys are permitted by this release workflow." >&2
+          if [[ "$STRIPE_SECRET_KEY" != sk_test_* ]]; then
+            echo "A Stripe test-mode secret key (sk_test_) is required; live keys are never accepted." >&2
             exit 1
           fi
           if [[ "$STORE_CHECKOUT_ENABLED" == "true" ]]; then
@@ -75,7 +86,7 @@ jobs:
           config.vars.STORE_POLICIES_CONFIRMED = process.env.STORE_POLICIES_CONFIRMED === "true" ? "true" : "false";
           config.vars.TAX_CONFIGURATION_CONFIRMED = process.env.TAX_CONFIGURATION_CONFIRMED === "true" ? "true" : "false";
           config.vars.STRIPE_AUTOMATIC_TAX = process.env.STRIPE_AUTOMATIC_TAX === "true" ? "true" : "false";
-          config.vars.SHIPPING_ALLOWED_COUNTRIES = process.env.SHIPPING_ALLOWED_COUNTRIES || "US";
+          config.vars.SHIPPING_ALLOWED_COUNTRIES = process.env.SHIPPING_ALLOWED_COUNTRIES;
           fs.writeFileSync("wrangler.deploy.jsonc", JSON.stringify(config, null, 2));
           NODE
       - name: Set up Node.js
