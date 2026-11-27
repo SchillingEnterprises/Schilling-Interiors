@@ -477,11 +477,11 @@ export default {
       const validation = ["Request body is too large.", "Request body must be valid JSON.", "Request body must be a JSON object."].includes(message)
         || message.startsWith("Product ") || message.startsWith("Use a unique") || message.startsWith("Price ") || message.startsWith("Inventory ") || message.startsWith("Choose ") || message.startsWith("Tracking ") || message.startsWith("Carrier, tracking") || message.startsWith("A product does not have enough stock.");
       const conflict = message.startsWith("A product does not have enough stock.");
-      if (validation) return json({ error: message }, conflict ? 409 : 400);
+      if (validation) return secure(json({ error: message }, conflict ? 409 : 400));
 
       // Database/provider exceptions can contain schema, request, or infrastructure
       // details. Keep those details server-side and expose only a generic failure.
-      return json({ error: "An unexpected server error occurred. Please try again." }, 500);
+      return secure(json({ error: "An unexpected server error occurred. Please try again." }, 500));
     }
   }
 };
