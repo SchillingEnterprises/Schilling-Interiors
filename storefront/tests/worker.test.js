@@ -3,6 +3,35 @@ import assert from "node:assert/strict";
 import { catalogPublishingEnabled, checkoutConfigured, constantTimeEqual, linkStripeSession, publicOrderStatus, refundIdempotencyKey, refundPaymentIntentFromSession, reserveOrderInventory, safeAddressField, shippingAddressFromSession, validPaidCheckoutSession, validateFulfillmentUpdate, validateProduct, verifyStripeSignature } from "../src/worker.js";
 import { createHmac, randomUUID } from "node:crypto";
 
+function oversizedStreamingRequest(url, { chunkBytes, chunkCount, headers = {} }) {
+  let produced = 0;
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (produced >= chunkCount) {
+        controller.close();
+        return;
+      }
+      produced += 1;
+      controller.enqueue(new Uint8Array(chunkBytes));
+    },
+    cancel() {
+      cancelled = true;
+    }
+  });
+  const request = new Request(url, {
+    method: "POST",
+    headers,
+    body,
+    duplex: "half"
+  });
+  return {
+    request,
+    wasCancelled: () => cancelled,
+    chunksProduced: () => produced
+  };
+}
+
 test("admin token comparison checks full strings and rejects mismatches", () => {
   assert.equal(constantTimeEqual("a".repeat(40), "a".repeat(40)), true);
   assert.equal(constantTimeEqual("a".repeat(40), "a".repeat(39) + "b"), false);
@@ -108,6 +137,62 @@ test("live Stripe Checkout sessions are rejected by the order-status route", asy
     {}
   );
   assert.equal(response.status, 400);
+});
+
+test("checkout streams and cancels oversized JSON bodies without Content-Length", async () => {
+  const worker = (await import("../src/worker.js")).default;
+  const stream = oversizedStreamingRequest("https://shop.example.com/api/checkout", {
+    chunkBytes: 10_000,
+    chunkCount: 5,
+    headers: { "content-type": "application/json" }
+  });
+  assert.equal(stream.request.headers.get("content-length"), null);
+
+  const response = await worker.fetch(stream.request, {
+    STORE_CHECKOUT_ENABLED: "true",
+    STORE_RELEASE_APPROVED: "true",
+    STORE_POLICIES_CONFIRMED: "true",
+    TAX_CONFIGURATION_CONFIRMED: "true",
+    STRIPE_SECRET_KEY: "sk_test_example",
+    STRIPE_WEBHOOK_SECRET: "whsec_example",
+    TURNSTILE_SECRET_KEY: "turnstile-secret",
+    TURNSTILE_SITE_KEY: "turnstile-site",
+    ADMIN_API_TOKEN: "x".repeat(40),
+    PUBLIC_STORE_URL: "https://shop.example.com",
+    DB: {
+      prepare() { throw new Error("Database must not be accessed for an oversized request."); }
+    }
+  });
+
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).error, "Request body is too large.");
+  assert.equal(stream.wasCancelled(), true);
+  assert.ok(stream.chunksProduced() < 5, "the body reader should stop before consuming the whole stream");
+});
+
+test("Stripe webhook streams and cancels oversized payloads before signature or database work", async () => {
+  const worker = (await import("../src/worker.js")).default;
+  const stream = oversizedStreamingRequest("https://shop.example.com/api/stripe/webhook", {
+    chunkBytes: 65_536,
+    chunkCount: 8,
+    headers: { "stripe-signature": "invalid" }
+  });
+  assert.equal(stream.request.headers.get("content-length"), null);
+  let databaseTouched = false;
+
+  const response = await worker.fetch(stream.request, {
+    STRIPE_WEBHOOK_SECRET: "whsec_example",
+    DB: {
+      prepare() { databaseTouched = true; throw new Error("Database must not be accessed."); },
+      batch() { databaseTouched = true; throw new Error("Database must not be accessed."); }
+    }
+  });
+
+  assert.equal(response.status, 413);
+  assert.equal(await response.text(), "Payload too large");
+  assert.equal(stream.wasCancelled(), true);
+  assert.ok(stream.chunksProduced() < 8, "the webhook reader should stop before consuming the whole stream");
+  assert.equal(databaseTouched, false);
 });
 
 test("checkout fails closed before reading a request or contacting payment services", async () => {

@@ -40,10 +40,48 @@ function constantTimeEqual(left, right) {
   for (let i = 0; i < length; i += 1) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
   return diff === 0;
 }
+async function readBoundedText(request, maxBytes) {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength && /^\\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+    throw new RangeError("Request body is too large.");
+  }
+  if (!request.body) return "";
+
+  const reader = request.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        try { await reader.cancel(); } catch { /* Preserve the size-limit error. */ }
+        throw new RangeError("Request body is too large.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 async function readJson(request, maxBytes = 16_384) {
-  if (Number(request.headers.get("content-length") || 0) > maxBytes) throw new Error("Request body is too large.");
-  const raw = await request.text();
-  if (encoder.encode(raw).byteLength > maxBytes) throw new Error("Request body is too large.");
+  let raw;
+  try {
+    raw = await readBoundedText(request, maxBytes);
+  } catch (error) {
+    if (error instanceof RangeError && error.message === "Request body is too large.") throw error;
+    throw new Error("Request body must be valid JSON.");
+  }
   let parsed;
   try { parsed = JSON.parse(raw); } catch { throw new Error("Request body must be valid JSON."); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Request body must be a JSON object.");
@@ -215,8 +253,15 @@ function validPaidCheckoutSession(session, order) {
 }
 
 async function handleStripeWebhook(request, env) {
-  const payload = await request.text();
-  if (encoder.encode(payload).byteLength > 256000) return text("Payload too large", 413);
+  let payload;
+  try {
+    payload = await readBoundedText(request, 256_000);
+  } catch (error) {
+    if (error instanceof RangeError && error.message === "Request body is too large.") {
+      return text("Payload too large", 413);
+    }
+    return text("Invalid event", 400);
+  }
   if (!await verifyStripeSignature(payload, request.headers.get("stripe-signature"), env.STRIPE_WEBHOOK_SECRET)) return text("Invalid signature", 400);
   let event;
   try { event = JSON.parse(payload); } catch { return text("Invalid event", 400); }
@@ -474,7 +519,10 @@ export default {
     try { return secure(await route(request, env)); }
     catch (error) {
       const message = error instanceof Error ? error.message : "";
-      const validation = ["Request body is too large.", "Request body must be valid JSON.", "Request body must be a JSON object."].includes(message)
+      if (message === "Request body is too large.") {
+        return secure(json({ error: message }, 413));
+      }
+      const validation = ["Request body must be valid JSON.", "Request body must be a JSON object."].includes(message)
         || message.startsWith("Product ") || message.startsWith("Use a unique") || message.startsWith("Price ") || message.startsWith("Inventory ") || message.startsWith("Choose ") || message.startsWith("Tracking ") || message.startsWith("Carrier, tracking") || message.startsWith("A product does not have enough stock.");
       const conflict = message.startsWith("A product does not have enough stock.");
       if (validation) return secure(json({ error: message }, conflict ? 409 : 400));
