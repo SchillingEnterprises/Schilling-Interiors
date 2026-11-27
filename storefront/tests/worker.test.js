@@ -139,6 +139,41 @@ test("live Stripe Checkout sessions are rejected by the order-status route", asy
   assert.equal(response.status, 400);
 });
 
+test("checkout rejects oversized declared Content-Length before reading the request stream", async () => {
+  const worker = (await import("../src/worker.js")).default;
+  const stream = oversizedStreamingRequest("https://shop.example.com/api/checkout", {
+    chunkBytes: 1,
+    chunkCount: 5,
+    headers: {
+      "content-type": "application/json",
+      "content-length": "20000"
+    }
+  });
+
+  const response = await worker.fetch(stream.request, {
+    STORE_CHECKOUT_ENABLED: "true",
+    STORE_RELEASE_APPROVED: "true",
+    STORE_POLICIES_CONFIRMED: "true",
+    TAX_CONFIGURATION_CONFIRMED: "true",
+    STRIPE_SECRET_KEY: "sk_test_example",
+    STRIPE_WEBHOOK_SECRET: "whsec_example",
+    TURNSTILE_SECRET_KEY: "turnstile-secret",
+    TURNSTILE_SITE_KEY: "turnstile-site",
+    ADMIN_API_TOKEN: "x".repeat(40),
+    PUBLIC_STORE_URL: "https://shop.example.com",
+    DB: {
+      prepare() { throw new Error("Database must not be accessed for a declared oversized request."); }
+    }
+  });
+
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).error, "Request body is too large.");
+  assert.ok(
+    stream.chunksProduced() <= 1,
+    "the Worker should reject before draining the body (Request construction may prebuffer one chunk)"
+  );
+});
+
 test("checkout streams and cancels oversized JSON bodies without Content-Length", async () => {
   const worker = (await import("../src/worker.js")).default;
   const stream = oversizedStreamingRequest("https://shop.example.com/api/checkout", {

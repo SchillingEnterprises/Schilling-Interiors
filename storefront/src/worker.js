@@ -42,7 +42,7 @@ function constantTimeEqual(left, right) {
 }
 async function readBoundedText(request, maxBytes) {
   const declaredLength = request.headers.get("content-length");
-  if (declaredLength && /^\\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+  if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
     throw new RangeError("Request body is too large.");
   }
   if (!request.body) return "";
